@@ -27,6 +27,7 @@ MONGO_URI = os.environ.get('MONGO_URI')
 client = None
 db = None
 tasks_collection = None
+db_connection_error = None
 
 try:
     if not MONGO_URI:
@@ -36,14 +37,11 @@ try:
     client.admin.command('ping')
     logging.info("✅ 成功連線至 MongoDB！")
     
-    # *** 關鍵修改 ***
-    # 之前: db = client.get_default_database() # 這行在 URI 沒有指定資料庫時會出錯
-    # 現在: 明確指定要使用的資料庫名稱
     db = client['compressor_db'] 
-    
     tasks_collection = db['tasks']
 
 except Exception as e:
+    db_connection_error = e
     logging.error(f"❌ 無法連線至 MongoDB: {e}")
 
 # --- 通用輔助函式 ---
@@ -211,6 +209,25 @@ def task_status(task_id):
 @app.route('/download/<path:filename>')
 def download_file(filename):
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
+
+@app.route('/health')
+def health_check():
+    """新增的健康檢查路由"""
+    if db_connection_error:
+        return jsonify({
+            'status': 'error', 
+            'database_connection': 'failed_at_startup', 
+            'error': str(db_connection_error)
+        }), 500
+        
+    if client:
+        try:
+            client.admin.command('ping')
+            return jsonify({'status': 'ok', 'database_connection': 'successful'}), 200
+        except Exception as e:
+            return jsonify({'status': 'error', 'database_connection': 'ping_failed', 'error': str(e)}), 500
+    else:
+        return jsonify({'status': 'error', 'database_connection': 'not_initialized'}), 500
 
 if __name__ == '__main__':
     # 這部分僅供本地測試使用，在 Zeabur 上會由 gunicorn 啟動
