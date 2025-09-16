@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多功能線上壓縮工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', '微軟正黑體', sans-serif; }
+        .tab-button.active { border-color: #3b82f6; color: #3b82f6; background-color: #eff6ff; }
+        .log-panel { white-space: pre-wrap; word-wrap: break-word; }
+        .loader { border-top-color: #3498db; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">多功能線上壓縮工具</h1>
+            <p class="text-gray-600 mt-2">一個安全、強大的線上檔案編碼與解碼工具</p>
+        </header>
+
+        <!-- Tabs -->
+        <div class="mb-6 border-b border-gray-200">
+            <nav class="flex space-x-4" aria-label="Tabs">
+                <button id="tab-encoder" onclick="switchTab('encoder')" class="tab-button active px-4 py-3 font-medium text-sm rounded-t-lg border-b-2">
+                    編碼器 (壓縮)
+                </button>
+                <button id="tab-decoder" onclick="switchTab('decoder')" class="tab-button px-4 py-3 font-medium text-sm rounded-t-lg border-b-2 border-transparent">
+                    解碼器 (解壓縮)
+                </button>
+            </nav>
+        </div>
+
+        <!-- Encoder Panel -->
+        <div id="panel-encoder" class="space-y-6">
+            <form id="encoder-form" class="bg-white p-6 rounded-lg shadow-md space-y-6">
+                <!-- 1. 選擇檔案 -->
+                <fieldset class="border-t pt-4">
+                    <legend class="text-lg font-semibold text-gray-700 px-2">1. 選擇檔案</legend>
+                    <div class="mt-4">
+                        <label for="source-file" class="block text-sm font-medium text-gray-600 mb-2">請選擇要壓縮的來源檔案：</label>
+                        <input type="file" id="source-file" name="source_file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                    </div>
+                </fieldset>
+
+                <!-- 2. 壓縮設定 -->
+                <fieldset class="border-t pt-4">
+                    <legend class="text-lg font-semibold text-gray-700 px-2">2. 壓縮設定</legend>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label for="iterations" class="block text-sm font-medium text-gray-600">壓縮次數：</label>
+                            <input type="number" id="iterations" name="iterations" value="5" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="formats" class="block text-sm font-medium text-gray-600">格式順序 (逗號分隔)：</label>
+                            <input type="text" id="formats" name="formats" value="zip,7z,targz,tarbz2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                    </div>
+                     <div class="mt-4 flex items-start">
+                        <div class="flex items-center h-5">
+                            <input id="delete-original" name="delete_original" type="checkbox" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                        </div>
+                        <div class="ml-3 text-sm">
+                            <label for="delete-original" class="font-medium text-gray-700">完成後刪除伺服器上的來源檔案</label>
+                            <p class="text-gray-500">（基於安全考量，建議勾選）</p>
+                        </div>
+                    </div>
+                </fieldset>
+                
+                <!-- 3. 加密規則 -->
+                <fieldset class="border-t pt-4">
+                    <legend class="text-lg font-semibold text-gray-700 px-2">3. 加密規則</legend>
+                    <div class="mt-4 space-y-4">
+                         <div class="flex items-center">
+                            <input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                            <label for="encrypt-odd" class="ml-3 block text-sm font-medium text-gray-700">加密所有奇數層</label>
+                        </div>
+                        <div class="flex items-center">
+                            <input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                            <label for="encrypt-manual" class="ml-3 block text-sm font-medium text-gray-700">手動指定層數：</label>
+                        </div>
+                        <input type="text" id="manual-layers" name="manual_layers" value="2,4" placeholder="例如: 2,4,5" class="ml-7 block w-full sm:w-1/2 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    </div>
+                </fieldset>
+
+                <!-- 4. 執行 -->
+                <div class="pt-5">
+                    <div class="flex justify-end">
+                        <button type="submit" class="w-full md:w-auto inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            開始壓縮
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Decoder Panel -->
+        <div id="panel-decoder" class="hidden space-y-6">
+            <form id="decoder-form" class="bg-white p-6 rounded-lg shadow-md space-y-6">
+                <fieldset class="border-t pt-4">
+                    <legend class="text-lg font-semibold text-gray-700 px-2">1. 選擇檔案</legend>
+                    <div class="mt-4 space-y-4">
+                        <div>
+                            <label for="compressed-file" class="block text-sm font-medium text-gray-600 mb-2">請選擇要解壓縮的檔案：</label>
+                            <input type="file" id="compressed-file" name="compressed_file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        </div>
+                        <div>
+                            <label for="password-file" class="block text-sm font-medium text-gray-600 mb-2">請選擇對應的密碼表 (.txt)：</label>
+                            <input type="file" id="password-file" name="password_file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        </div>
+                    </div>
+                </fieldset>
+                <div class="pt-5">
+                    <div class="flex justify-end">
+                        <button type="submit" class="w-full md:w-auto inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            開始解壓縮
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Status/Log Panel -->
+        <div id="status-panel" class="hidden mt-8 bg-white p-6 rounded-lg shadow-md">
+            <div class="flex items-center justify-between mb-4">
+                 <h2 class="text-xl font-semibold text-gray-800">執行狀態</h2>
+                 <div id="loader" class="hidden loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-8 w-8 animate-spin"></div>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <div id="log-container" class="w-full h-64 bg-gray-900 text-white font-mono text-sm p-4 rounded-md overflow-y-auto log-panel">
+                等待任務開始...
+            </div>
+            <div id="result-area" class="mt-4 text-center"></div>
+        </div>
+    </div>
+
+    <script>
+        const encoderForm = document.getElementById('encoder-form');
+        const decoderForm = document.getElementById('decoder-form');
+        const statusPanel = document.getElementById('status-panel');
+        const logContainer = document.getElementById('log-container');
+        const progressBar = document.getElementById('progress-bar');
+        const resultArea = document.getElementById('result-area');
+        const loader = document.getElementById('loader');
+        let pollingInterval;
+
+        function switchTab(tab) {
+            document.getElementById('panel-encoder').classList.toggle('hidden', tab !== 'encoder');
+            document.getElementById('tab-encoder').classList.toggle('active', tab === 'encoder');
+            document.getElementById('panel-decoder').classList.toggle('hidden', tab !== 'decoder');
+            document.getElementById('tab-decoder').classList.toggle('active', tab === 'decoder');
+        }
+
+        function resetStatusPanel() {
+            statusPanel.classList.remove('hidden');
+            logContainer.textContent = '正在初始化任務...';
+            progressBar.style.width = '0%';
+            resultArea.innerHTML = '';
+            loader.classList.remove('hidden');
+            if (pollingInterval) clearInterval(pollingInterval);
+        }
+
+        async function pollStatus(taskId) {
+            try {
+                const response = await fetch(`/status/${taskId}`);
+                if (!response.ok) throw new Error('伺服器狀態查詢失敗');
+                const data = await response.json();
+
+                logContainer.textContent = data.logs.join('\n');
+                logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+                
+                if (data.progress && data.progress.total > 0) {
+                    progressBar.style.width = `${(data.progress.current / data.progress.total) * 100}%`;
+                }
+
+                if (data.status === 'completed') {
+                    clearInterval(pollingInterval);
+                    loader.classList.add('hidden');
+                    resultArea.innerHTML = `<a href="/download/${data._id}" class="inline-block mt-4 rounded-md border border-transparent bg-green-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700">下載結果檔案</a>`;
+                } else if (data.status === 'failed') {
+                    clearInterval(pollingInterval);
+                    loader.classList.add('hidden');
+                    resultArea.innerHTML = `<p class="text-red-500 mt-4">任務失敗，請檢查日誌。</p>`;
+                }
+
+            } catch (error) {
+                console.error('Polling error:', error);
+                logContainer.textContent += '\n\n與伺服器連線中斷...';
+                clearInterval(pollingInterval);
+                loader.classList.add('hidden');
+            }
+        }
+        
+        async function submitForm(url, formData) {
+            resetStatusPanel();
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '任務啟動失敗');
+                }
+                const data = await response.json();
+                
+                if (data.task_id) {
+                    pollStatus(data.task_id); // Poll immediately once
+                    pollingInterval = setInterval(() => pollStatus(data.task_id), 2000);
+                } else {
+                     throw new Error(data.error || '未知的伺服器錯誤');
+                }
+            } catch (error) {
+                logContainer.textContent = `錯誤: ${error.message}`;
+                loader.classList.add('hidden');
+            }
+        }
+
+        encoderForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(encoderForm);
+            submitForm('/encode', formData);
+        });
+        
+        decoderForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const formData = new FormData(decoderForm);
+            submitForm('/decode', formData);
+        });
+
+        document.querySelectorAll('input[name="encrypt_mode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                document.getElementById('manual-layers').disabled = e.target.value !== 'manual';
+            });
+        });
+        document.getElementById('manual-layers').disabled = true; // Initial state
+
+    </script>
+
+</body>
+</html>
+
