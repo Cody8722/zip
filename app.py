@@ -14,13 +14,20 @@ from datetime import datetime, timedelta
 import logging
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
+# *** 修改：設定日誌格式，讓訊息更清晰 ***
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+# *** 新增日誌：確認資料夾是否成功建立 ***
+try:
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    logging.info(f"資料夾 '{UPLOAD_FOLDER}' 和 '{OUTPUT_FOLDER}' 已確認存在。")
+except Exception as e:
+    logging.error(f"建立資料夾時發生錯誤: {e}")
+
 
 # --- 資料庫連線 ---
 MONGO_URI = os.environ.get('MONGO_URI')
@@ -68,9 +75,12 @@ def update_task_progress(task_id, progress):
     tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
 
 def compression_worker(task_id_str):
+    # *** 新增日誌 ***
+    logging.info(f"背景壓縮任務 {task_id_str} 已啟動。")
     task_id = ObjectId(task_id_str)
     task = tasks_collection.find_one({'_id': task_id})
     if not task:
+        logging.error(f"找不到任務 {task_id_str}，背景任務終止。")
         return
 
     params = task['params']
@@ -81,7 +91,6 @@ def compression_worker(task_id_str):
     compression_formats_sequence = params['formats']
     
     output_prefix = 'secure_layer_'
-    source_basename = os.path.splitext(os.path.basename(original_file))[0]
     
     try:
         password_file_content = "--- 壓縮密碼表 ---\n"
@@ -94,6 +103,9 @@ def compression_worker(task_id_str):
             current_format_name = compression_formats_sequence[(i - 1) % len(compression_formats_sequence)]
             output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_{output_prefix}{i}{formats[current_format_name]}")
             
+            # *** 新增日誌 ***
+            logging.info(f"任務 {task_id_str}: 正在處理第 {i} 層，輸出至 {output_filename}")
+
             password = None
             password_log_msg = "(無密碼)"
             
@@ -130,14 +142,18 @@ def compression_worker(task_id_str):
             'password_file_content': password_file_content
         }})
         update_task_log(task_id, "✅ 壓縮流程結束。")
+        logging.info(f"任務 {task_id_str} 成功完成。")
 
     except Exception as e:
-        logging.error(f"壓縮任務 {task_id_str} 失敗: {e}")
+        logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True) # exc_info=True 會記錄更詳細的錯誤
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
         update_task_log(task_id, f"❌ 錯誤: {e}")
     finally:
+        # *** 新增日誌 ***
+        logging.info(f"任務 {task_id_str}: 正在清理暫存檔案 {original_file}...")
         if os.path.exists(original_file):
             os.remove(original_file)
+            logging.info(f"已刪除 {original_file}")
 
 # --- API 路由 ---
 
@@ -147,7 +163,10 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
+    # *** 新增日誌 ***
+    logging.info("收到 /upload 請求...")
     if db is None:
+        logging.error("/upload: 資料庫未連線。")
         return jsonify({'error': '資料庫未連線，請檢查伺服器日誌。'}), 500
 
     if 'file' not in request.files:
@@ -155,9 +174,17 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': '沒有選擇檔案'}), 400
+    
+    # *** 新增更詳細的檔案儲存日誌 ***
+    try:
+        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        logging.info(f"準備將檔案儲存至: {filepath}")
+        file.save(filepath)
+        logging.info(f"檔案 '{file.filename}' 已成功儲存。")
+    except Exception as e:
+        logging.error(f"儲存檔案 '{file.filename}' 時發生嚴重錯誤: {e}", exc_info=True)
+        return jsonify({'error': '伺服器儲存檔案時發生錯誤。'}), 500
 
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
 
     try:
         iterations = int(request.form.get('iterations', 5))
@@ -182,12 +209,14 @@ def upload_file():
         }
         result = tasks_collection.insert_one(task)
         task_id = result.inserted_id
+        logging.info(f"已在資料庫中建立新任務: {task_id}")
 
         threading.Thread(target=compression_worker, args=(str(task_id),)).start()
         
         return jsonify({'task_id': str(task_id)})
 
     except Exception as e:
+        logging.error(f"建立壓縮任務時發生錯誤: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 400
 
 @app.route('/status/<task_id>')
@@ -208,6 +237,7 @@ def task_status(task_id):
 
 @app.route('/download/<path:filename>')
 def download_file(filename):
+    logging.info(f"收到下載請求: {filename}")
     return send_from_directory(OUTPUT_FOLDER, filename, as_attachment=True)
 
 @app.route('/health')
