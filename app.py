@@ -37,7 +37,7 @@ tasks_collection = None
 db_connection_error = None
 
 try:
-    if not MONO_URI:
+    if not MONGO_URI:
         raise ValueError("錯誤：找不到 MONGO_URI 環境變數。請在 Zeabur 中設定。")
     
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
@@ -217,7 +217,8 @@ def upload_file():
             'original_file': filepath,
             'iterations': iterations,
             'encrypt_odd': encrypt_mode == 'odd',
-            'manual_layers': {int(x.strip()) for x in manual_layers_str.split(',') if x.strip()},
+            # *** 關鍵修改：將 set() 改為 list[]，以符合 MongoDB 的儲存格式 ***
+            'manual_layers': [int(x.strip()) for x in manual_layers_str.split(',') if x.strip()],
             'formats': [x.strip() for x in formats_str.split(',') if x.strip()]
         }
         
