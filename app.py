@@ -15,7 +15,6 @@ from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, timedelta
 import logging
-# *** 關鍵修改：修正 werkzeug 的拼寫錯誤 ***
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 
@@ -32,7 +31,7 @@ for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
 
 # --- 資料庫與加密金鑰連線 ---
 MONGO_URI = os.environ.get('MONGO_URI')
-SECRET_KEY = os.environ.get('SECRET_KEY') # 萬能總鑰
+SECRET_KEY = os.environ.get('SECRET_KEY')
 
 client = None
 db = None
@@ -45,13 +44,11 @@ try:
     if not MONGO_URI:
         raise ValueError("錯誤：找不到 MONGO_URI 環境變數。")
     if not SECRET_KEY:
-        raise ValueError("安全性錯誤：找不到 SECRET_KEY 環境變數。請在 Zeabur 中設定一個長的隨機字串以啟用加密功能。")
+        raise ValueError("安全性錯誤：找不到 SECRET_KEY 環境變數。")
     
-    # *** 關鍵修改：使用更標準的方式從 SECRET_KEY 產生 Fernet 金鑰 ***
-    # Fernet 金鑰必須是 32 位元組且經過 URL-safe base64 編碼。
     key_material = hashlib.sha256(SECRET_KEY.encode()).digest()
     key = base64.urlsafe_b64encode(key_material)
-    cipher_suite = Fernet(key) # 初始化加密套件
+    cipher_suite = Fernet(key)
 
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.admin.command('ping')
@@ -126,9 +123,6 @@ def compression_worker(task_id_str):
     original_file = params['original_file']
     
     try:
-        original_sha256 = calculate_sha256(original_file)
-        update_task_log(task_id, f"日誌: SHA-256: {original_sha256[:12]}...")
-
         iterations, encrypt_odd, manual_layers, formats_seq, \
         use_master_pass, master_pass, master_pass_interval, pin_code = \
             params['iterations'], params['encrypt_odd'], params['manual_layers'], params['formats'], \
@@ -173,8 +167,14 @@ def compression_worker(task_id_str):
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
 
-        tasks_collection.update_one({'_id': task_id}, {'$set': { 'status': '完成', 'progress': 100, 'result_file': os.path.basename(current_file), 'password_file_content': password_file_content, 'original_sha256': original_sha256 }})
         update_task_log(task_id, "✅ 壓縮流程結束。")
+
+        # *** 關鍵修改：在壓縮完成後，計算最終檔案的 SHA-256 ***
+        update_task_log(task_id, "日誌: 正在計算最終壓縮檔的 SHA-256 指紋...")
+        final_sha256 = calculate_sha256(current_file)
+        update_task_log(task_id, f"日誌: 最終 SHA-256: {final_sha256[:12]}...")
+
+        tasks_collection.update_one({'_id': task_id}, {'$set': { 'status': '完成', 'progress': 100, 'result_file': os.path.basename(current_file), 'password_file_content': password_file_content, 'final_sha256': final_sha256 }})
 
         parsed_passwords = parse_password_text(password_file_content)
         if parsed_passwords:
@@ -183,8 +183,10 @@ def compression_worker(task_id_str):
                 map_to_save['pin_hash'] = hash_pin(pin_code)
                 map_to_save['encrypted_master_pass'] = cipher_suite.encrypt(master_pass.encode('utf-8'))
             
-            password_maps_collection.update_one( {'sha256': original_sha256}, {'$set': map_to_save}, upsert=True)
-            update_task_log(task_id, f"日誌: 密碼表已安全儲存。")
+            # *** 關鍵修改：使用最終檔案的 SHA-256 作為 key 來儲存 ***
+            password_maps_collection.update_one( {'sha256': final_sha256}, {'$set': map_to_save}, upsert=True)
+            update_task_log(task_id, f"日誌: 密碼表已與最終檔案的 SHA-256 碼關聯並儲存。")
+
     except Exception as e:
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
         update_task_log(task_id, f"❌ 嚴重錯誤: {e}")
@@ -314,6 +316,7 @@ def decompress_route():
     file.save(filepath)
 
     try:
+        # 這裡的邏輯不變，因為它總是計算上傳檔案(即最終壓縮檔)的 SHA-256
         file_sha256 = calculate_sha256(filepath)
         pin_code = request.form.get('pin_code')
         manual_master_pass = request.form.get('master_password')
