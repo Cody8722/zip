@@ -93,7 +93,7 @@ def compression_worker(task_id_str):
     
     try:
         password_file_content = "--- 壓縮密碼表 ---\n"
-        update_task_log(task_id, "已建立密碼表。")
+        update_task_log(task_id, "日誌: 已建立密碼表。")
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz', 'tarbz2':'.tar.bz2', 'tarxz':'.tar.xz'}
         current_file = original_file
 
@@ -109,6 +109,7 @@ def compression_worker(task_id_str):
             if should_encrypt and format_name in ('zip', '7z'):
                 password = generate_password()
                 log_pwd = password
+                update_task_log(task_id, f"日誌: 為第 {i} 層產生密碼: {log_pwd}")
             elif should_encrypt and format_name.startswith('tar'):
                  update_task_log(task_id, f"注意：第 {i} 層是 {format_name} 格式，不支援加密。")
                  log_pwd = f"(不支援加密: {format_name})"
@@ -116,16 +117,21 @@ def compression_worker(task_id_str):
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
 
-            # *** 關鍵修改：統一使用 py7zr 處理 zip 和 7z 以確保一致性 ***
             if format_name in ('zip', '7z'):
+                update_task_log(task_id, f"日誌: 使用 py7zr 壓縮 '{os.path.basename(current_file)}'...")
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
                     z.write(current_file, os.path.basename(current_file))
             else: # tar 系列
                 mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
+                update_task_log(task_id, f"日誌: 使用 tarfile ({mode}) 壓縮 '{os.path.basename(current_file)}'...")
                 with tarfile.open(output_filename, mode) as tf:
                     tf.add(current_file, arcname=os.path.basename(current_file))
             
-            if current_file != original_file: os.remove(current_file)
+            update_task_log(task_id, f"成功: '{os.path.basename(current_file)}' -> '{os.path.basename(output_filename)}'")
+            if current_file != original_file:
+                update_task_log(task_id, f"日誌: 清理上一層檔案 '{os.path.basename(current_file)}'...")
+                os.remove(current_file)
+            
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
 
@@ -138,9 +144,11 @@ def compression_worker(task_id_str):
     except Exception as e:
         logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
-        update_task_log(task_id, f"❌ 錯誤: {e}")
+        update_task_log(task_id, f"❌ 嚴重錯誤: {e}")
     finally:
-        if os.path.exists(original_file): os.remove(original_file)
+        if os.path.exists(original_file):
+            update_task_log(task_id, f"日誌: 清理最初上傳的暫存檔...")
+            os.remove(original_file)
 
 # --- 解壓縮背景任務 ---
 def decompression_worker(task_id_str):
@@ -167,18 +175,22 @@ def decompression_worker(task_id_str):
             
             output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
             
-            # *** 關鍵修改：統一使用 py7zr 處理 zip 和 7z ***
-            # *** 關鍵修改：改用副檔名判斷 tar 格式，更穩定 ***
             if filename.endswith(('.zip', '.7z')):
+                update_task_log(task_id, f"日誌: 使用 py7zr 解壓縮 (密碼: {'有' if password else '無'})...")
                 with py7zr.SevenZipFile(current_file, 'r', password=password) as z:
                     z.extractall(path=output_path)
             elif any(filename.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar']):
+                update_task_log(task_id, f"日誌: 使用 tarfile 解壓縮...")
                 with tarfile.open(current_file, 'r:*') as tf:
                     tf.extractall(path=output_path)
             else:
                 raise ValueError(f"不支援的檔案格式或檔案已損壞: {filename}")
             
-            if current_file != original_file: os.remove(current_file)
+            update_task_log(task_id, f"日誌: 成功解開 '{filename}'。")
+
+            if current_file != original_file:
+                update_task_log(task_id, f"日誌: 清理上一層檔案 '{os.path.basename(current_file)}'...")
+                os.remove(current_file)
             
             extracted_files = os.listdir(output_path)
             if not extracted_files:
@@ -187,8 +199,10 @@ def decompression_worker(task_id_str):
                  logging.warning(f"解壓縮後發現多個檔案({len(extracted_files)})，將只處理第一個檔案。")
 
             extracted_file_path = os.path.join(output_path, extracted_files[0])
+            update_task_log(task_id, f"日誌: 找到解出的檔案 '{extracted_files[0]}'")
             
             shutil.move(extracted_file_path, os.path.join(OUTPUT_FOLDER, extracted_files[0]))
+            update_task_log(task_id, f"日誌: 清理暫存資料夾 '{output_path}'")
             shutil.rmtree(output_path)
             current_file = os.path.join(OUTPUT_FOLDER, extracted_files[0])
             
@@ -206,9 +220,11 @@ def decompression_worker(task_id_str):
     except Exception as e:
         logging.error(f"解壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
-        update_task_log(task_id, f"❌ 錯誤: {e}")
+        update_task_log(task_id, f"❌ 嚴重錯誤: {e}")
     finally:
-        if os.path.exists(original_file): os.remove(original_file)
+        if os.path.exists(original_file):
+            update_task_log(task_id, f"日誌: 清理最初上傳的暫存檔...")
+            os.remove(original_file)
 
 # --- API 路由 ---
 @app.route('/')
