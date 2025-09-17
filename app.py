@@ -70,7 +70,11 @@ def cleanup_old_files():
 
 # --- 通用輔助函式 ---
 def generate_password(length=12):
-    characters = string.ascii_letters + string.digits + string.punctuation
+    """
+    產生一個指定長度的隨機密碼。
+    *** 關鍵修改：只使用英文字母和數字，避免特殊字元造成問題 ***
+    """
+    characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for i in range(length))
 
 def update_task_log(task_id, message):
@@ -82,7 +86,6 @@ def update_task_progress(task_id, progress):
 # --- 壓縮背景任務 ---
 def compression_worker(task_id_str):
     task_id = ObjectId(task_id_str)
-    # ... (此處省略壓縮邏輯，與前一版相同)
     task = tasks_collection.find_one({'_id': task_id})
     if not task: return
 
@@ -189,6 +192,10 @@ def decompression_worker(task_id_str):
             'result_file': os.path.basename(current_file)
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
+    except py7zr.Bad7zFile as b7z_error:
+        logging.error(f"解壓縮任務 {task_id_str} 失敗: 檔案可能已損壞或密碼錯誤 - {b7z_error}", exc_info=True)
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
+        update_task_log(task_id, f"❌ 錯誤: 檔案可能已損壞或密碼錯誤。請確認密碼表是否正確。")
     except Exception as e:
         logging.error(f"解壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
