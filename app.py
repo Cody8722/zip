@@ -168,8 +168,6 @@ def compression_worker(task_id_str):
             update_task_progress(task_id, int((i / iterations) * 100))
 
         update_task_log(task_id, "✅ 壓縮流程結束。")
-
-        # *** 關鍵修改：在壓縮完成後，計算最終檔案的 SHA-256 ***
         update_task_log(task_id, "日誌: 正在計算最終壓縮檔的 SHA-256 指紋...")
         final_sha256 = calculate_sha256(current_file)
         update_task_log(task_id, f"日誌: 最終 SHA-256: {final_sha256[:12]}...")
@@ -183,7 +181,6 @@ def compression_worker(task_id_str):
                 map_to_save['pin_hash'] = hash_pin(pin_code)
                 map_to_save['encrypted_master_pass'] = cipher_suite.encrypt(master_pass.encode('utf-8'))
             
-            # *** 關鍵修改：使用最終檔案的 SHA-256 作為 key 來儲存 ***
             password_maps_collection.update_one( {'sha256': final_sha256}, {'$set': map_to_save}, upsert=True)
             update_task_log(task_id, f"日誌: 密碼表已與最終檔案的 SHA-256 碼關聯並儲存。")
 
@@ -277,9 +274,7 @@ def compress_route():
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
     
     file = request.files['file']
-    filename = file.filename
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
+    filename = secure_filename(file.filename)
 
     try:
         use_master_pass = request.form.get('use_master_pass') == 'on'
@@ -290,7 +285,7 @@ def compress_route():
         if use_master_pass and not master_pass: raise ValueError("您已啟用特殊密碼，但未提供密碼。")
 
         params = {
-            'original_file': filepath, 'raw_filename': filename,
+            'raw_filename': filename,
             'iterations': int(request.form.get('iterations', 5)),
             'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
             'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
@@ -298,10 +293,23 @@ def compress_route():
             'use_master_pass': use_master_pass, 'master_pass': master_pass,
             'master_pass_interval': master_pass_interval, 'pin_code': pin_code,
         }
-        task = {'type': 'compress', 'status': '處理中', 'progress': 0, 'logs': [f"收到檔案 '{filename}'"], 'params': params, 'created_at': datetime.utcnow(), 'cancel_requested': False}
+        
+        task = {'type': 'compress', 'status': 'pending', 'progress': 0, 'logs': [f"收到檔案 '{filename}'"], 'params': params, 'created_at': datetime.utcnow(), 'cancel_requested': False}
         task_id = tasks_collection.insert_one(task).inserted_id
-        threading.Thread(target=compression_worker, args=(str(task_id),)).start()
-        return jsonify({'task_id': str(task_id)})
+        task_id_str = str(task_id)
+        
+        unique_filename = f"{task_id_str}_{filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+        file.save(filepath)
+        
+        tasks_collection.update_one(
+            {'_id': task_id},
+            {'$set': {'params.original_file': filepath, 'status': '處理中'}}
+        )
+
+        threading.Thread(target=compression_worker, args=(task_id_str,)).start()
+        return jsonify({'task_id': task_id_str})
+
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -311,20 +319,28 @@ def decompress_route():
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
 
     file = request.files['file']
-    filename = file.filename
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    file.save(filepath)
+    filename = secure_filename(file.filename)
 
     try:
-        # 這裡的邏輯不變，因為它總是計算上傳檔案(即最終壓縮檔)的 SHA-256
-        file_sha256 = calculate_sha256(filepath)
         pin_code = request.form.get('pin_code')
         manual_master_pass = request.form.get('master_password')
         password_text = request.form.get('passwords', '')
         
+        logs = [f"收到檔案 '{filename}'"]
+        
+        task = {'type': 'decompress', 'status': 'pending', 'progress': 0, 'logs': logs, 'params': {}, 'created_at': datetime.utcnow(), 'cancel_requested': False}
+        task_id = tasks_collection.insert_one(task).inserted_id
+        task_id_str = str(task_id)
+
+        unique_filename = f"{task_id_str}_{filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+        file.save(filepath)
+
+        file_sha256 = calculate_sha256(filepath)
+        logs.append(f"日誌: 檔案 SHA-256: {file_sha256[:12]}...")
+        
         password_list = []
         master_pass_for_worker = None
-        logs = [f"收到檔案 '{filename}'", f"日誌: 檔案 SHA-256: {file_sha256[:12]}..."]
 
         if pin_code:
             logs.append(f"日誌: 偵測到 PIN 碼，嘗試驗證...")
@@ -353,13 +369,21 @@ def decompress_route():
             raise ValueError("找不到匹配或提供的密碼表。")
 
         params = {'original_file': filepath, 'password_list': password_list, 'master_pass': master_pass_for_worker}
-        task = {'type': 'decompress', 'status': '處理中', 'progress': 0, 'logs': logs, 'params': params, 'created_at': datetime.utcnow(), 'cancel_requested': False}
-        task_id = tasks_collection.insert_one(task).inserted_id
-        threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
-        return jsonify({'task_id': str(task_id)})
+        
+        tasks_collection.update_one(
+            {'_id': task_id},
+            {'$set': {'params': params, 'status': '處理中', 'logs': logs}}
+        )
+
+        threading.Thread(target=decompression_worker, args=(task_id_str,)).start()
+        return jsonify({'task_id': task_id_str})
     except Exception as e:
-        if os.path.exists(filepath): os.remove(filepath)
+        if 'task_id' in locals() and tasks_collection.find_one({'_id': task_id}):
+             tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}, '$push': {'logs': f"❌ 嚴重錯誤: {e}"}})
+        if 'filepath' in locals() and os.path.exists(filepath): 
+            os.remove(filepath)
         return jsonify({'error': str(e)}), 400
+
 
 @app.route('/cancel/<task_id>', methods=['POST'])
 def cancel_task(task_id):
