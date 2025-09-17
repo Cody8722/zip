@@ -13,6 +13,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, timedelta
 import logging
+# werkzeug.utils 中的 secure_filename 已不再需要，但保留 import 以防萬一
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -237,8 +238,11 @@ def compress_route():
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
     
     file = request.files['file']
-    safe_filename = secure_filename(file.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, safe_filename)
+    
+    # *** 關鍵修改：不再使用 secure_filename，直接使用原始檔名 ***
+    # 這樣才能正確處理中文、日文等非英文字元。
+    filename = file.filename
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
     try:
@@ -249,7 +253,7 @@ def compress_route():
             'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()]
         }
-        task = {'type': 'compress', 'status': '處理中', 'progress': 0, 'logs': [f"收到檔案 '{safe_filename}'"], 'params': params, 'created_at': datetime.utcnow()}
+        task = {'type': 'compress', 'status': '處理中', 'progress': 0, 'logs': [f"收到檔案 '{filename}'"], 'params': params, 'created_at': datetime.utcnow()}
         task_id = tasks_collection.insert_one(task).inserted_id
         threading.Thread(target=compression_worker, args=(str(task_id),)).start()
         return jsonify({'task_id': str(task_id)})
@@ -262,8 +266,10 @@ def decompress_route():
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
 
     file = request.files['file']
-    safe_filename = secure_filename(file.filename)
-    filepath = os.path.join(UPLOAD_FOLDER, safe_filename)
+
+    # *** 關鍵修改：同樣地，直接使用原始檔名 ***
+    filename = file.filename
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
     file.save(filepath)
 
     try:
@@ -272,13 +278,13 @@ def decompress_route():
         for line in password_text.strip().split('\n'):
             match = re.search(r'第 \d+ 層 \((.*?)\):\s*(.*)', line)
             if match:
-                filename, password = match.groups()
-                filename = filename.strip()
+                fname, password = match.groups()
+                fname = fname.strip()
                 password = password.strip()
-                password_list.append({'filename': filename, 'password': None if password == '(無密碼)' else password})
+                password_list.append({'filename': fname, 'password': None if password == '(無密碼)' else password})
         
         params = {'original_file': filepath, 'password_list': password_list}
-        task = {'type': 'decompress', 'status': '處理中', 'progress': 0, 'logs': [f"收到檔案 '{safe_filename}'"], 'params': params, 'created_at': datetime.utcnow()}
+        task = {'type': 'decompress', 'status': '處理中', 'progress': 0, 'logs': [f"收到檔案 '{filename}'"], 'params': params, 'created_at': datetime.utcnow()}
         task_id = tasks_collection.insert_one(task).inserted_id
         threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
         return jsonify({'task_id': str(task_id)})
