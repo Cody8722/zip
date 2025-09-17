@@ -70,10 +70,7 @@ def cleanup_old_files():
 
 # --- 通用輔助函式 ---
 def generate_password(length=12):
-    """
-    產生一個指定長度的隨機密碼。
-    *** 關鍵修改：只使用英文字母和數字，避免特殊字元造成問題 ***
-    """
+    """產生一個指定長度的隨機密碼 (只使用英文字母和數字)。"""
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for i in range(length))
 
@@ -102,24 +99,34 @@ def compression_worker(task_id_str):
 
         for i in range(1, iterations + 1):
             format_name = formats_seq[(i - 1) % len(formats_seq)]
-            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[format_name]}")
-            password = None
-            log_pwd = "(無密碼)"
             
             should_encrypt = (encrypt_odd and i % 2 != 0) or (not encrypt_odd and i in manual_layers)
             
-            if should_encrypt and format_name in ('zip', '7z'):
+            # *** 關鍵修改：智慧型格式升級 ***
+            final_format_name = format_name
+            if should_encrypt and format_name == 'zip':
+                final_format_name = '7z'
+                update_task_log(task_id, f"注意：為確保加密穩定性，已將第 {i} 層的格式從 zip 自動變更為 7z。")
+
+            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[final_format_name]}")
+            password = None
+            log_pwd = "(無密碼)"
+            
+            if should_encrypt and final_format_name in ('zip', '7z'):
                 password = generate_password()
                 log_pwd = password
+            elif should_encrypt and final_format_name.startswith('tar'):
+                 update_task_log(task_id, f"注意：第 {i} 層是 {final_format_name} 格式，不支援加密。")
+                 log_pwd = f"(不支援加密: {final_format_name})"
 
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
-            update_task_log(task_id, f"--- 第 {i}/{iterations} 層 ({format_name}, 加密: {'是' if password else '否'}) ---")
+            update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
 
-            if format_name in ('zip', '7z'):
+            if final_format_name in ('zip', '7z'):
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
                     z.write(current_file, os.path.basename(current_file))
-            else:
-                mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
+            else: # tar 系列
+                mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[final_format_name]
                 with tarfile.open(output_filename, mode) as tf:
                     tf.add(current_file, arcname=os.path.basename(current_file))
             
