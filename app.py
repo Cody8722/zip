@@ -102,34 +102,26 @@ def compression_worker(task_id_str):
             
             should_encrypt = (encrypt_odd and i % 2 != 0) or (not encrypt_odd and i in manual_layers)
             
-            final_format_name = format_name
-            if should_encrypt and format_name == 'zip':
-                final_format_name = '7z'
-                update_task_log(task_id, f"注意：為確保加密穩定性，已將第 {i} 層的格式從 zip 自動變更為 7z。")
-
-            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[final_format_name]}")
+            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[format_name]}")
             password = None
             log_pwd = "(無密碼)"
             
-            if should_encrypt and final_format_name in ('zip', '7z'):
+            if should_encrypt and format_name in ('zip', '7z'):
                 password = generate_password()
                 log_pwd = password
-            elif should_encrypt and final_format_name.startswith('tar'):
-                 update_task_log(task_id, f"注意：第 {i} 層是 {final_format_name} 格式，不支援加密。")
-                 log_pwd = f"(不支援加密: {final_format_name})"
+            elif should_encrypt and format_name.startswith('tar'):
+                 update_task_log(task_id, f"注意：第 {i} 層是 {format_name} 格式，不支援加密。")
+                 log_pwd = f"(不支援加密: {format_name})"
 
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
 
-            # *** 關鍵修改：為 zip 和 7z 使用各自最穩定的函式庫 ***
-            if final_format_name == 'zip':
-                with zipfile.ZipFile(output_filename, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-                    zf.write(current_file, arcname=os.path.basename(current_file))
-            elif final_format_name == '7z':
+            # *** 關鍵修改：統一使用 py7zr 處理 zip 和 7z 以確保一致性 ***
+            if format_name in ('zip', '7z'):
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
                     z.write(current_file, os.path.basename(current_file))
             else: # tar 系列
-                mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[final_format_name]
+                mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
                 with tarfile.open(output_filename, mode) as tf:
                     tf.add(current_file, arcname=os.path.basename(current_file))
             
@@ -175,14 +167,12 @@ def decompression_worker(task_id_str):
             
             output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
             
-            # *** 關鍵修改：對應壓縮邏輯，使用不同的函式庫來解壓縮 ***
-            if filename.endswith('.zip'):
-                with zipfile.ZipFile(current_file, 'r') as zf:
-                    zf.extractall(path=output_path)
-            elif filename.endswith('.7z'):
+            # *** 關鍵修改：統一使用 py7zr 處理 zip 和 7z ***
+            # *** 關鍵修改：改用副檔名判斷 tar 格式，更穩定 ***
+            if filename.endswith(('.zip', '.7z')):
                 with py7zr.SevenZipFile(current_file, 'r', password=password) as z:
                     z.extractall(path=output_path)
-            elif tarfile.is_tarfile(current_file):
+            elif any(filename.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar']):
                 with tarfile.open(current_file, 'r:*') as tf:
                     tf.extractall(path=output_path)
             else:
@@ -191,13 +181,16 @@ def decompression_worker(task_id_str):
             if current_file != original_file: os.remove(current_file)
             
             extracted_files = os.listdir(output_path)
-            if len(extracted_files) != 1:
-                raise ValueError(f"解壓縮後發現非預期的檔案數量 ({len(extracted_files)})。")
+            if not extracted_files:
+                raise ValueError(f"解壓縮後找不到任何檔案。")
+            if len(extracted_files) > 1:
+                 logging.warning(f"解壓縮後發現多個檔案({len(extracted_files)})，將只處理第一個檔案。")
+
+            extracted_file_path = os.path.join(output_path, extracted_files[0])
             
-            current_file = os.path.join(output_path, extracted_files[0])
-            shutil.move(current_file, os.path.join(OUTPUT_FOLDER, os.path.basename(current_file)))
-            os.rmdir(output_path)
-            current_file = os.path.join(OUTPUT_FOLDER, os.path.basename(current_file))
+            shutil.move(extracted_file_path, os.path.join(OUTPUT_FOLDER, extracted_files[0]))
+            shutil.rmtree(output_path)
+            current_file = os.path.join(OUTPUT_FOLDER, extracted_files[0])
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
@@ -261,7 +254,6 @@ def decompress_route():
         password_text = request.form.get('passwords', '')
         password_list = []
         for line in password_text.strip().split('\n'):
-            # *** 關鍵修改：更穩健的密碼表解析 ***
             match = re.search(r'第 \d+ 層 \((.*?)\):\s*(.*)', line)
             if match:
                 filename, password = match.groups()
