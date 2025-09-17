@@ -8,6 +8,8 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .log-box { font-family: 'Courier New', Courier, monospace; }
+        .tab-button { transition: all 0.3s; }
+        .tab-button.active { border-color: #3b82f6; color: #3b82f6; background-color: #eff6ff; }
         .fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
@@ -17,162 +19,142 @@
     <div class="container mx-auto p-4 md:p-8 max-w-4xl">
         <header class="text-center mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-gray-900">多功能線上壓縮工具</h1>
-            <p class="text-gray-600 mt-2">將您的檔案進行多層加密壓縮，確保安全。</p>
+            <p class="text-gray-600 mt-2">安全地對您的檔案進行多層壓縮與解壓縮。</p>
         </header>
 
         <main class="bg-white rounded-lg shadow-lg p-6 md:p-8">
-            <!-- 步驟一：上傳與設定 -->
-            <div id="upload-section" class="fade-in">
-                <h2 class="text-2xl font-semibold mb-4 border-b pb-2">1. 上傳與設定</h2>
-                <!-- *** 關鍵修改：將 action 的路徑從 /encode 改為 /upload *** -->
-                <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-                    <div class="mb-4">
-                        <label for="file-upload" class="block text-sm font-medium text-gray-700 mb-2">選擇檔案:</label>
-                        <input id="file-upload" name="file" type="file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                    </div>
+            <!-- 功能分頁 -->
+            <div class="mb-6 border-b border-gray-200">
+                <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                    <button id="tab-compress" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">壓縮</button>
+                    <button id="tab-decompress" class="tab-button text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">解壓縮</button>
+                </nav>
+            </div>
 
+            <!-- 壓縮區塊 -->
+            <div id="compress-section">
+                <form id="compress-form">
+                    <div class="mb-4">
+                        <label for="file-compress" class="block text-sm font-medium text-gray-700 mb-2">選擇檔案:</label>
+                        <input id="file-compress" name="file" type="file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                         <div>
                             <label for="iterations" class="block text-sm font-medium text-gray-700">壓縮次數:</label>
                             <input type="number" id="iterations" name="iterations" value="5" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label for="formats" class="block text-sm font-medium text-gray-700">格式順序 (用逗號分隔):</label>
+                            <label for="formats" class="block text-sm font-medium text-gray-700">格式順序 (逗號分隔):</label>
                             <input type="text" id="formats" name="formats" value="zip,7z,targz" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                         </div>
                     </div>
-
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">加密規則:</label>
                         <div class="space-y-2">
-                            <div class="flex items-center">
-                                <input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500">
-                                <label for="encrypt-odd" class="ml-3 block text-sm text-gray-900">加密所有奇數層 (1, 3, 5...)</label>
-                            </div>
-                            <div class="flex items-center">
-                                <input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500">
-                                <label for="encrypt-manual" class="ml-3 block text-sm text-gray-900">手動指定層數:</label>
-                                <input type="text" id="manual_layers" name="manual_layers" placeholder="例如: 2,4" class="ml-2 block w-full md:w-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm">
-                            </div>
+                            <div class="flex items-center"><input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"><label for="encrypt-odd" class="ml-3 block text-sm text-gray-900">加密所有奇數層 (1, 3, 5...)</label></div>
+                            <div class="flex items-center"><input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"><label for="encrypt-manual" class="ml-3 block text-sm text-gray-900">手動指定層數:</label><input type="text" id="manual_layers" name="manual_layers" placeholder="例如: 2,4" class="ml-2 block w-full md:w-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"></div>
                         </div>
                     </div>
-                    
-                    <div class="mt-6 text-center">
-                        <button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">
-                            開始壓縮
-                        </button>
-                    </div>
+                    <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">開始壓縮</button></div>
                 </form>
             </div>
 
-            <!-- 步驟二：進度與結果 -->
-            <div id="progress-section" class="hidden fade-in mt-8">
-                <h2 class="text-2xl font-semibold mb-4 border-b pb-2">2. 進度與結果</h2>
-                <div class="mb-4">
-                    <div class="flex justify-between mb-1">
-                        <span id="progress-status" class="text-base font-medium text-blue-700">處理中...</span>
-                        <span id="progress-percentage" class="text-sm font-medium text-blue-700">0%</span>
+            <!-- 解壓縮區塊 -->
+            <div id="decompress-section" class="hidden">
+                <form id="decompress-form">
+                    <div class="mb-4">
+                        <label for="file-decompress" class="block text-sm font-medium text-gray-700 mb-2">選擇要解壓縮的檔案:</label>
+                        <input id="file-decompress" name="file" type="file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
                     </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5">
-                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                    <div class="mb-4">
+                        <label for="passwords" class="block text-sm font-medium text-gray-700">貼上密碼表:</label>
+                        <textarea id="passwords" name="passwords" rows="5" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500" placeholder="請將完整的密碼表內容貼在此處..."></textarea>
                     </div>
-                </div>
-                
-                <div class="mt-4">
-                    <label for="log-box" class="block text-sm font-medium text-gray-700">執行日誌:</label>
-                    <div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap"></div>
-                </div>
-
-                <div id="result-section" class="hidden fade-in mt-6 p-4 bg-green-50 rounded-lg text-center">
-                    <h3 class="text-lg font-medium text-green-800">壓縮完成！</h3>
-                    <div class="mt-4 flex flex-col md:flex-row justify-center items-center gap-4">
-                        <a id="download-link" href="#" class="w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">下載壓縮檔</a>
-                        <button id="password-button" class="w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">顯示/下載密碼表</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 密碼顯示 Modal -->
-            <div id="password-modal" class="hidden fixed z-10 inset-0 overflow-y-auto">
-                <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center">
-                    <div class="fixed inset-0 transition-opacity" aria-hidden="true"><div class="absolute inset-0 bg-gray-500 opacity-75"></div></div>
-                    <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all my-8 max-w-lg w-full">
-                        <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                            <h3 class="text-lg leading-6 font-medium text-gray-900">密碼表</h3>
-                            <div class="mt-2">
-                                <pre id="password-content" class="text-sm text-gray-700 bg-gray-50 p-3 rounded-md overflow-x-auto" style="max-height: 200px;"></pre>
-                            </div>
-                        </div>
-                        <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                            <button id="close-modal" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">關閉</button>
-                        </div>
-                    </div>
-                </div>
+                    <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105">開始解壓縮</button></div>
+                </form>
             </div>
             
+            <!-- 進度與結果區塊 (共用) -->
+            <div id="progress-section" class="hidden fade-in mt-8">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-2">處理進度</h2>
+                <div class="mb-4">
+                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
+                </div>
+                <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap"></div></div>
+                <div id="result-section" class="hidden fade-in mt-6 p-4 bg-green-50 rounded-lg text-center">
+                    <h3 class="text-lg font-medium text-green-800">任務完成！</h3>
+                    <div id="result-buttons" class="mt-4 flex flex-col md:flex-row justify-center items-center gap-4"></div>
+                </div>
+            </div>
+
         </main>
-        <footer class="text-center mt-8 text-sm text-gray-500">
-            <p>請注意：上傳的檔案將在處理完畢後一小時內自動從伺服器刪除。</p>
-        </footer>
+        <footer class="text-center mt-8 text-sm text-gray-500"><p>提醒：所有上傳及處理的檔案，將在一小時後從伺服器自動清除。</p></footer>
     </div>
 
     <script>
-        const uploadForm = document.getElementById('upload-form');
-        const uploadSection = document.getElementById('upload-section');
+        const tabs = { compress: document.getElementById('tab-compress'), decompress: document.getElementById('tab-decompress') };
+        const sections = { compress: document.getElementById('compress-section'), decompress: document.getElementById('decompress-section') };
+        const forms = { compress: document.getElementById('compress-form'), decompress: document.getElementById('decompress-form') };
         const progressSection = document.getElementById('progress-section');
         const progressBar = document.getElementById('progress-bar');
         const progressPercentage = document.getElementById('progress-percentage');
         const progressStatus = document.getElementById('progress-status');
         const logBox = document.getElementById('log-box');
         const resultSection = document.getElementById('result-section');
-        const downloadLink = document.getElementById('download-link');
-        const passwordButton = document.getElementById('password-button');
-        const passwordModal = document.getElementById('password-modal');
-        const passwordContent = document.getElementById('password-content');
-        const closeModalButton = document.getElementById('close-modal');
+        const resultButtons = document.getElementById('result-buttons');
 
-        let passwordFileContent = '';
+        let currentMode = 'compress';
 
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            uploadSection.classList.add('hidden');
-            progressSection.classList.remove('hidden');
-            resultSection.classList.add('hidden');
-            logBox.innerHTML = '';
-
-            const formData = new FormData(uploadForm);
-            
-            try {
-                // *** 關鍵修改：將 fetch 的路徑從 /encode 改為 /upload ***
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData,
+        // 分頁切換邏輯
+        Object.keys(tabs).forEach(mode => {
+            tabs[mode].addEventListener('click', () => {
+                currentMode = mode;
+                Object.keys(tabs).forEach(m => {
+                    tabs[m].classList.toggle('active', m === mode);
+                    sections[m].classList.toggle('hidden', m !== mode);
                 });
+                // 切換時重設進度條顏色
+                progressBar.className = `h-2.5 rounded-full transition-all duration-300 ${mode === 'compress' ? 'bg-blue-600' : 'bg-green-600'}`;
+            });
+        });
+        
+        // 表單提交邏輯
+        Object.keys(forms).forEach(mode => {
+            forms[mode].addEventListener('submit', async (e) => {
+                e.preventDefault();
+                sections.compress.classList.add('hidden');
+                sections.decompress.classList.add('hidden');
+                progressSection.classList.remove('hidden');
+                resultSection.classList.add('hidden');
+                logBox.innerHTML = '';
 
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || '上傳失敗');
+                const formData = new FormData(forms[mode]);
+                
+                try {
+                    const response = await fetch(`/${mode}`, { method: 'POST', body: formData });
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || '請求失敗');
+                    }
+                    const data = await response.json();
+                    if (data.task_id) {
+                        checkStatus(data.task_id);
+                    } else {
+                        throw new Error('無法取得任務 ID');
+                    }
+                } catch (error) {
+                    logBox.innerHTML = `錯誤: ${error.message}`;
+                    progressStatus.textContent = '失敗';
                 }
-
-                const data = await response.json();
-                if (data.task_id) {
-                    checkStatus(data.task_id);
-                } else {
-                    throw new Error('無法取得任務 ID');
-                }
-            } catch (error) {
-                logBox.innerHTML = `錯誤: ${error.message}`;
-                progressStatus.textContent = '失敗';
-            }
+            });
         });
 
+        // 輪詢狀態
         async function checkStatus(taskId) {
             try {
                 const response = await fetch(`/status/${taskId}`);
-                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || '檢查狀態失敗');
-                }
+                if (!response.ok) throw new Error('檢查狀態失敗');
                 const data = await response.json();
                 
                 progressBar.style.width = `${data.progress || 0}%`;
@@ -182,29 +164,54 @@
 
                 if (data.status === '完成') {
                     progressStatus.textContent = '完成';
-                    resultSection.classList.remove('hidden');
-                    downloadLink.href = `/download/${data.result_file}`;
-                    downloadLink.setAttribute('download', data.result_file);
-                    passwordFileContent = data.password_file_content;
+                    displayResults(data);
                 } else if (data.status === '失敗') {
                     progressStatus.textContent = '失敗';
                 } else {
-                    setTimeout(() => checkStatus(taskId), 2000); // 2秒後再檢查一次
+                    setTimeout(() => checkStatus(taskId), 2000);
                 }
             } catch (error) {
                  logBox.innerHTML += `\n檢查狀態時發生錯誤: ${error.message}`;
                  progressStatus.textContent = '錯誤';
             }
         }
+        
+        // 顯示結果按鈕
+        function displayResults(data) {
+            resultSection.classList.remove('hidden');
+            resultButtons.innerHTML = ''; // 清空舊按鈕
 
-        passwordButton.addEventListener('click', () => {
-            passwordContent.textContent = passwordFileContent;
-            passwordModal.classList.remove('hidden');
-        });
+            // 下載檔案按鈕 (通用)
+            const downloadFileBtn = document.createElement('a');
+            downloadFileBtn.href = `/download/${data.result_file}`;
+            downloadFileBtn.textContent = `下載結果檔案 (${data.result_file})`;
+            downloadFileBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700";
+            resultButtons.appendChild(downloadFileBtn);
 
-        closeModalButton.addEventListener('click', () => {
-            passwordModal.classList.add('hidden');
-        });
+            // 如果是壓縮任務，顯示密碼相關按鈕
+            if (data.type === 'compress' && data.password_file_content) {
+                // 下載密碼表按鈕
+                const downloadPassBtn = document.createElement('button');
+                downloadPassBtn.textContent = '下載密碼表 (.txt)';
+                downloadPassBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50";
+                downloadPassBtn.onclick = () => downloadTextFile(data.password_file_content, 'passwords.txt');
+                resultButtons.appendChild(downloadPassBtn);
+            }
+        }
+        
+        // 下載文字檔函式
+        function downloadTextFile(content, filename) {
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
     </script>
 
 </body>
