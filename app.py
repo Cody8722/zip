@@ -17,9 +17,9 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
-# *** 關鍵修改：將資料夾路徑改到伺服器允許寫入的 /tmp 目錄下 ***
 UPLOAD_FOLDER = '/tmp/compressor_uploads'
 OUTPUT_FOLDER = '/tmp/compressor_outputs'
+MAX_FILE_AGE = timedelta(hours=1) # 檔案超過 1 小時會被清理
 
 try:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -37,7 +37,7 @@ tasks_collection = None
 db_connection_error = None
 
 try:
-    if not MONGO_URI:
+    if not MONO_URI:
         raise ValueError("錯誤：找不到 MONGO_URI 環境變數。請在 Zeabur 中設定。")
     
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
@@ -50,6 +50,30 @@ try:
 except Exception as e:
     db_connection_error = e
     logging.error(f"❌ 無法連線至 MongoDB: {e}")
+
+# --- 自動清理函式 ---
+def cleanup_old_files():
+    """定期清理 /tmp 目錄下的舊檔案"""
+    global cleanup_timer
+    try:
+        logging.info("執行排程任務：清理暫存檔案...")
+        now = datetime.now()
+        cleaned_count = 0
+        for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
+            for filename in os.listdir(folder):
+                file_path = os.path.join(folder, filename)
+                if os.path.isfile(file_path):
+                    mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                    if now - mod_time > MAX_FILE_AGE:
+                        os.remove(file_path)
+                        logging.info(f"已刪除過期暫存檔: {file_path}")
+                        cleaned_count += 1
+        logging.info(f"清理完畢。共刪除 {cleaned_count} 個檔案。")
+    except Exception as e:
+        logging.error(f"檔案清理任務發生錯誤: {e}")
+    finally:
+        cleanup_timer = threading.Timer(1800, cleanup_old_files) # 每 30 分鐘執行一次
+        cleanup_timer.start()
 
 # --- 通用輔助函式 ---
 
@@ -172,7 +196,6 @@ def upload_file():
         return jsonify({'error': '沒有選擇檔案'}), 400
     
     try:
-        # 使用 werkzeug.utils.secure_filename 確保檔名安全
         from werkzeug.utils import secure_filename
         safe_filename = secure_filename(file.filename)
         filepath = os.path.join(UPLOAD_FOLDER, safe_filename)
@@ -256,6 +279,10 @@ def health_check():
             return jsonify({'status': 'error', 'database_connection': 'ping_failed', 'error': str(e)}), 500
     else:
         return jsonify({'status': 'error', 'database_connection': 'not_initialized'}), 500
+
+# --- 啟動排程任務 ---
+cleanup_timer = threading.Timer(10, cleanup_old_files)
+cleanup_timer.start()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
