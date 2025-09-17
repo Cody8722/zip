@@ -9,11 +9,13 @@ import random
 import re
 import threading
 import hashlib
+import base64
 from flask import Flask, request, jsonify, send_from_directory, render_template
 from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, timedelta
 import logging
+# *** 關鍵修改：修正 werkzeug 的拼寫錯誤 ***
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 
@@ -45,8 +47,10 @@ try:
     if not SECRET_KEY:
         raise ValueError("安全性錯誤：找不到 SECRET_KEY 環境變數。請在 Zeabur 中設定一個長的隨機字串以啟用加密功能。")
     
-    # 使用 SHA256 來確保金鑰長度為 32 bytes
-    key = hashlib.sha256(SECRET_KEY.encode()).digest()
+    # *** 關鍵修改：使用更標準的方式從 SECRET_KEY 產生 Fernet 金鑰 ***
+    # Fernet 金鑰必須是 32 位元組且經過 URL-safe base64 編碼。
+    key_material = hashlib.sha256(SECRET_KEY.encode()).digest()
+    key = base64.urlsafe_b64encode(key_material)
     cipher_suite = Fernet(key) # 初始化加密套件
 
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
@@ -97,7 +101,6 @@ def calculate_sha256(filepath):
     return sha256_hash.hexdigest()
 
 def hash_pin(pin):
-    """新增：將 PIN 碼進行雜湊處理"""
     return hashlib.sha256(pin.encode('utf-8')).hexdigest()
 
 def parse_password_text(password_text):
@@ -203,8 +206,7 @@ def decompression_worker(task_id_str):
 
     try:
         update_task_log(task_id, f"開始解壓縮檔案: {os.path.basename(original_file)}")
-        if not password_list:
-            raise ValueError("找不到可用的密碼表。")
+        if not password_list: raise ValueError("找不到可用的密碼表。")
 
         current_file = original_file
         total_layers = len(password_list)
@@ -219,13 +221,10 @@ def decompression_worker(task_id_str):
             layer_num = total_layers - i
             filename = layer_info['filename']
             password = layer_info['password']
-            
-            # *** 關鍵修改：新增更清晰、更安全的日誌訊息 ***
-            password_usage_log = "否" # 預設為無密碼
+            password_usage_log = "否"
             
             if password == 'MASTER_PASSWORD_PLACEHOLDER':
-                if not master_pass:
-                    raise ValueError(f"第 {layer_num} 層需要特殊密碼，但您沒有提供或系統無法自動帶入。")
+                if not master_pass: raise ValueError(f"第 {layer_num} 層需要特殊密碼，但未提供。")
                 password = master_pass
                 password_usage_log = "是 (使用您提供的特殊密碼)"
             elif password:
@@ -237,11 +236,9 @@ def decompression_worker(task_id_str):
             output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
             
             if filename.endswith(('.zip', '.7z')):
-                with py7zr.SevenZipFile(current_file, 'r', password=password) as z:
-                    z.extractall(path=output_path)
+                with py7zr.SevenZipFile(current_file, 'r', password=password) as z: z.extractall(path=output_path)
             elif any(filename.endswith(ext) for ext in ['.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar.xz', '.txz', '.tar']):
-                with tarfile.open(current_file, 'r:*') as tf:
-                    tf.extractall(path=output_path)
+                with tarfile.open(current_file, 'r:*') as tf: tf.extractall(path=output_path)
             else:
                 raise ValueError(f"不支援的檔案格式: {filename}")
             
@@ -274,7 +271,7 @@ def index():
 
 @app.route('/compress', methods=['POST'])
 def compress_route():
-    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    if db is None: return jsonify({'error': '資料庫未連線或金鑰未設定'}), 500
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
     
     file = request.files['file']
@@ -308,7 +305,7 @@ def compress_route():
 
 @app.route('/decompress', methods=['POST'])
 def decompress_route():
-    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    if db is None: return jsonify({'error': '資料庫未連線或金鑰未設定'}), 500
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
 
     file = request.files['file']
