@@ -3,3 +3,4 @@ py7zr
 gunicorn
 pymongo
 dnspython
+cryptography
