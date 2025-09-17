@@ -14,19 +14,19 @@ from datetime import datetime, timedelta
 import logging
 
 app = Flask(__name__)
-# *** 修改：設定日誌格式，讓訊息更清晰 ***
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
-UPLOAD_FOLDER = 'uploads'
-OUTPUT_FOLDER = 'outputs'
-# *** 新增日誌：確認資料夾是否成功建立 ***
+# *** 關鍵修改：將資料夾路徑改到伺服器允許寫入的 /tmp 目錄下 ***
+UPLOAD_FOLDER = '/tmp/compressor_uploads'
+OUTPUT_FOLDER = '/tmp/compressor_outputs'
+
 try:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     logging.info(f"資料夾 '{UPLOAD_FOLDER}' 和 '{OUTPUT_FOLDER}' 已確認存在。")
 except Exception as e:
-    logging.error(f"建立資料夾時發生錯誤: {e}")
+    logging.error(f"在 /tmp 中建立資料夾時發生錯誤: {e}")
 
 
 # --- 資料庫連線 ---
@@ -75,7 +75,6 @@ def update_task_progress(task_id, progress):
     tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
 
 def compression_worker(task_id_str):
-    # *** 新增日誌 ***
     logging.info(f"背景壓縮任務 {task_id_str} 已啟動。")
     task_id = ObjectId(task_id_str)
     task = tasks_collection.find_one({'_id': task_id})
@@ -103,7 +102,6 @@ def compression_worker(task_id_str):
             current_format_name = compression_formats_sequence[(i - 1) % len(compression_formats_sequence)]
             output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_{output_prefix}{i}{formats[current_format_name]}")
             
-            # *** 新增日誌 ***
             logging.info(f"任務 {task_id_str}: 正在處理第 {i} 層，輸出至 {output_filename}")
 
             password = None
@@ -145,11 +143,10 @@ def compression_worker(task_id_str):
         logging.info(f"任務 {task_id_str} 成功完成。")
 
     except Exception as e:
-        logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True) # exc_info=True 會記錄更詳細的錯誤
+        logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
         update_task_log(task_id, f"❌ 錯誤: {e}")
     finally:
-        # *** 新增日誌 ***
         logging.info(f"任務 {task_id_str}: 正在清理暫存檔案 {original_file}...")
         if os.path.exists(original_file):
             os.remove(original_file)
@@ -163,7 +160,6 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    # *** 新增日誌 ***
     logging.info("收到 /upload 請求...")
     if db is None:
         logging.error("/upload: 資料庫未連線。")
@@ -175,12 +171,14 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': '沒有選擇檔案'}), 400
     
-    # *** 新增更詳細的檔案儲存日誌 ***
     try:
-        filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+        # 使用 werkzeug.utils.secure_filename 確保檔名安全
+        from werkzeug.utils import secure_filename
+        safe_filename = secure_filename(file.filename)
+        filepath = os.path.join(UPLOAD_FOLDER, safe_filename)
         logging.info(f"準備將檔案儲存至: {filepath}")
         file.save(filepath)
-        logging.info(f"檔案 '{file.filename}' 已成功儲存。")
+        logging.info(f"檔案 '{safe_filename}' 已成功儲存。")
     except Exception as e:
         logging.error(f"儲存檔案 '{file.filename}' 時發生嚴重錯誤: {e}", exc_info=True)
         return jsonify({'error': '伺服器儲存檔案時發生錯誤。'}), 500
@@ -260,6 +258,5 @@ def health_check():
         return jsonify({'status': 'error', 'database_connection': 'not_initialized'}), 500
 
 if __name__ == '__main__':
-    # 這部分僅供本地測試使用，在 Zeabur 上會由 gunicorn 啟動
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
