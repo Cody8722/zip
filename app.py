@@ -102,7 +102,6 @@ def compression_worker(task_id_str):
             
             should_encrypt = (encrypt_odd and i % 2 != 0) or (not encrypt_odd and i in manual_layers)
             
-            # *** 關鍵修改：智慧型格式升級 ***
             final_format_name = format_name
             if should_encrypt and format_name == 'zip':
                 final_format_name = '7z'
@@ -122,7 +121,11 @@ def compression_worker(task_id_str):
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
 
-            if final_format_name in ('zip', '7z'):
+            # *** 關鍵修改：為 zip 和 7z 使用各自最穩定的函式庫 ***
+            if final_format_name == 'zip':
+                with zipfile.ZipFile(output_filename, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+                    zf.write(current_file, arcname=os.path.basename(current_file))
+            elif final_format_name == '7z':
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
                     z.write(current_file, os.path.basename(current_file))
             else: # tar 系列
@@ -172,11 +175,15 @@ def decompression_worker(task_id_str):
             
             output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
             
-            if filename.endswith(('.zip', '.7z')):
+            # *** 關鍵修改：對應壓縮邏輯，使用不同的函式庫來解壓縮 ***
+            if filename.endswith('.zip'):
+                with zipfile.ZipFile(current_file, 'r') as zf:
+                    zf.extractall(path=output_path)
+            elif filename.endswith('.7z'):
                 with py7zr.SevenZipFile(current_file, 'r', password=password) as z:
                     z.extractall(path=output_path)
             elif tarfile.is_tarfile(current_file):
-                with tarfile.open(current_file) as tf:
+                with tarfile.open(current_file, 'r:*') as tf:
                     tf.extractall(path=output_path)
             else:
                 raise ValueError(f"不支援的檔案格式或檔案已損壞: {filename}")
@@ -199,8 +206,8 @@ def decompression_worker(task_id_str):
             'result_file': os.path.basename(current_file)
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
-    except py7zr.Bad7zFile as b7z_error:
-        logging.error(f"解壓縮任務 {task_id_str} 失敗: 檔案可能已損壞或密碼錯誤 - {b7z_error}", exc_info=True)
+    except (py7zr.Bad7zFile, zipfile.BadZipFile) as bad_file_error:
+        logging.error(f"解壓縮任務 {task_id_str} 失敗: 檔案可能已損壞或密碼錯誤 - {bad_file_error}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
         update_task_log(task_id, f"❌ 錯誤: 檔案可能已損壞或密碼錯誤。請確認密碼表是否正確。")
     except Exception as e:
@@ -254,9 +261,12 @@ def decompress_route():
         password_text = request.form.get('passwords', '')
         password_list = []
         for line in password_text.strip().split('\n'):
-            match = re.search(r'第 \d+ 層 \((.*?)\): (.*)', line)
+            # *** 關鍵修改：更穩健的密碼表解析 ***
+            match = re.search(r'第 \d+ 層 \((.*?)\):\s*(.*)', line)
             if match:
                 filename, password = match.groups()
+                filename = filename.strip()
+                password = password.strip()
                 password_list.append({'filename': filename, 'password': None if password == '(無密碼)' else password})
         
         params = {'original_file': filepath, 'password_list': password_list}
