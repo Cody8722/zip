@@ -200,7 +200,20 @@
                 elements.progressPercentage.textContent = '0%';
                 elements.progressStatus.textContent = '處理中...';
 
-                fetch(endpoint, { method: 'POST', body })
+                // *** 關鍵修改：建立 fetch 的設定物件 ***
+                const fetchOptions = {
+                    method: 'POST',
+                    body: body
+                };
+                
+                // *** 關鍵修改：如果 body 是字串，就自動加上 JSON 標頭 ***
+                if (typeof body === 'string') {
+                    fetchOptions.headers = {
+                        'Content-Type': 'application/json'
+                    };
+                }
+
+                fetch(endpoint, fetchOptions)
                     .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
                     .then(data => {
                         if (data.task_id) {
@@ -248,7 +261,6 @@
                 elements.resultButtons.innerHTML = '';
                 const isCompress = data.type === 'compress';
                 
-                // 自動下載解壓縮結果
                 if (!isCompress && data.result_file_id) {
                     elements.logBox.innerHTML += '\n\n日誌: 正在自動為您下載檔案...';
                     window.location.href = `/download/${data._id}`;
@@ -312,14 +324,11 @@
                     }
 
                     elements.share.startBtn.onclick = () => {
+                        // *** 關鍵修改：將要傳送的資料打包成 JSON 字串 ***
                         const body = JSON.stringify({
                             master_password: needsMasterPass ? elements.share.masterPassInput.value : null
                         });
-                        startTask(`/start-shared-decompression/${shareId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body
-                        });
+                        startTask(`/start-shared-decompression/${shareId}`, body);
                     };
                 } catch (error) {
                     elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center">${error.message}</div>`;
