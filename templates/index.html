@@ -122,26 +122,27 @@
                         <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105">開始解壓縮</button></div>
                     </form>
                 </div>
-                
-                <!-- 進度與結果區塊 (共用) -->
-                <div id="progress-section" class="hidden fade-in mt-8">
-                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">處理進度</h2>
-                    <div class="mb-4">
-                        <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700">0%</span></div>
-                        <div class="w-full bg-gray-200 rounded-full h-2.5"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
-                    </div>
+            </div>
+            
+            <!-- *** 關鍵修改：將 progress-section 從 main-view 中移出 *** -->
+            <!-- 進度與結果區塊 (共用) -->
+            <div id="progress-section" class="hidden fade-in mt-8">
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-2">處理進度</h2>
+                <div class="mb-4">
+                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
+                </div>
 
-                    <div class="text-center my-4">
-                        <button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
-                            取消操作
-                        </button>
-                    </div>
+                <div class="text-center my-4">
+                    <button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                        取消操作
+                    </button>
+                </div>
 
-                    <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap"></div></div>
-                    <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center">
-                        <h3 id="result-title" class="text-lg font-medium text-blue-800">任務完成！</h3>
-                        <div id="result-buttons" class="mt-4 flex flex-col md:flex-row justify-center items-center gap-4"></div>
-                    </div>
+                <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap"></div></div>
+                <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center">
+                    <h3 id="result-title" class="text-lg font-medium text-blue-800">任務完成！</h3>
+                    <div id="result-buttons" class="mt-4 flex flex-col md:flex-row justify-center items-center gap-4"></div>
                 </div>
             </div>
 
@@ -153,7 +154,7 @@
                 <div class="space-y-6">
                     <div>
                         <span class="block text-sm font-medium text-gray-700">步驟一：下載壓縮檔</span>
-                        <a id="share-download-btn" href="#" class="mt-2 w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <a id="share-download-btn" href="#" class="mt-2 w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <!-- JS will populate this -->
                         </a>
                     </div>
@@ -187,7 +188,6 @@
     </div>
 
     <script>
-        // *** 關鍵修改：將所有程式碼包裹在 DOMContentLoaded 事件中 ***
         document.addEventListener('DOMContentLoaded', () => {
             // --- 元素定義 ---
             const tabs = { compress: document.getElementById('tab-compress'), decompress: document.getElementById('tab-decompress') };
@@ -232,11 +232,11 @@
             Object.keys(forms).forEach(mode => {
                 forms[mode].addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    mainView.classList.add('hidden');
-                    progressSection.classList.remove('hidden');
-                    resultSection.classList.add('hidden');
-                    cancelButton.classList.remove('hidden');
-                    logBox.innerHTML = '';
+                    if (mainView) mainView.classList.add('hidden');
+                    if (progressSection) progressSection.classList.remove('hidden');
+                    if (resultSection) resultSection.classList.add('hidden');
+                    if (cancelButton) cancelButton.classList.remove('hidden');
+                    if (logBox) logBox.innerHTML = '';
 
                     const formData = new FormData(forms[mode]);
                     
@@ -254,9 +254,9 @@
                             throw new Error('無法取得任務 ID');
                         }
                     } catch (error) {
-                        logBox.innerHTML = `錯誤: ${error.message}`;
-                        progressStatus.textContent = '失敗';
-                        cancelButton.classList.add('hidden');
+                        if (logBox) logBox.innerHTML = `錯誤: ${error.message}`;
+                        if (progressStatus) progressStatus.textContent = '失敗';
+                        if (cancelButton) cancelButton.classList.add('hidden');
                     }
                 });
             });
@@ -265,11 +265,11 @@
                 if (currentTaskId) {
                     try {
                         await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
-                        logBox.innerHTML += '\n正在請求取消操作...';
+                        if (logBox) logBox.innerHTML += '\n正在請求取消操作...';
                         cancelButton.disabled = true;
                         cancelButton.textContent = '取消中...';
                     } catch (error) {
-                        logBox.innerHTML += '\n取消請求失敗。';
+                        if (logBox) logBox.innerHTML += '\n取消請求失敗。';
                     }
                 }
             });
@@ -282,33 +282,38 @@
                     if (!response.ok) throw new Error('檢查狀態失敗');
                     const data = await response.json();
                     
-                    progressBar.style.width = `${data.progress || 0}%`;
-                    progressPercentage.textContent = `${data.progress || 0}%`;
-                    logBox.innerHTML = (data.logs || []).join('\n');
-                    logBox.scrollTop = logBox.scrollHeight;
+                    if (progressBar) progressBar.style.width = `${data.progress || 0}%`;
+                    if (progressPercentage) progressPercentage.textContent = `${data.progress || 0}%`;
+                    if (logBox) {
+                        logBox.innerHTML = (data.logs || []).join('\n');
+                        logBox.scrollTop = logBox.scrollHeight;
+                    }
 
                     const finalStates = ['完成', '失敗', '已取消'];
                     if (finalStates.includes(data.status)) {
-                        progressStatus.textContent = data.status;
-                        resultTitle.textContent = `任務${data.status}！`;
-                        resultSection.classList.remove('hidden');
+                        if (progressStatus) progressStatus.textContent = data.status;
+                        if (resultTitle) resultTitle.textContent = `任務${data.status}！`;
+                        if (resultSection) resultSection.classList.remove('hidden');
                         if(data.status === '完成') displayResults(data);
                         
-                        cancelButton.classList.add('hidden');
-                        cancelButton.disabled = false;
-                        cancelButton.textContent = '取消操作';
+                        if (cancelButton) {
+                            cancelButton.classList.add('hidden');
+                            cancelButton.disabled = false;
+                            cancelButton.textContent = '取消操作';
+                        }
                         currentTaskId = null;
                     } else {
                         setTimeout(() => checkStatus(taskId), 2000);
                     }
                 } catch (error) {
-                     logBox.innerHTML += `\n檢查狀態時發生錯誤: ${error.message}`;
-                     progressStatus.textContent = '錯誤';
-                     cancelButton.classList.add('hidden');
+                     if (logBox) logBox.innerHTML += `\n檢查狀態時發生錯誤: ${error.message}`;
+                     if (progressStatus) progressStatus.textContent = '錯誤';
+                     if (cancelButton) cancelButton.classList.add('hidden');
                 }
             }
             
             function displayResults(data) {
+                if (!resultButtons) return;
                 resultButtons.innerHTML = '';
                 const resultFileBtnClass = data.type === 'compress' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700';
                 const downloadFileBtn = document.createElement('a');
@@ -318,8 +323,8 @@
                 resultButtons.appendChild(downloadFileBtn);
 
                 if (data.type === 'compress') {
-                     resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center';
-                     resultTitle.className = 'text-lg font-medium text-blue-800';
+                     if (resultSection) resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center';
+                     if (resultTitle) resultTitle.className = 'text-lg font-medium text-blue-800';
                     if (data.password_file_content) {
                         const downloadPassBtn = document.createElement('button');
                         downloadPassBtn.textContent = '下載密碼表 (.txt)';
@@ -334,8 +339,8 @@
                         resultButtons.appendChild(generateShareBtn);
                     }
                 } else {
-                     resultSection.className = 'fade-in mt-6 p-4 bg-green-50 rounded-lg text-center';
-                     resultTitle.className = 'text-lg font-medium text-green-800';
+                     if (resultSection) resultSection.className = 'fade-in mt-6 p-4 bg-green-50 rounded-lg text-center';
+                     if (resultTitle) resultTitle.className = 'text-lg font-medium text-green-800';
                 }
             }
 
@@ -362,7 +367,7 @@
                 };
                 urlContainer.appendChild(urlInput);
                 urlContainer.appendChild(copyButton);
-                resultButtons.appendChild(urlContainer);
+                if (resultButtons) resultButtons.appendChild(urlContainer);
                 event.target.closest('button').disabled = true;
             }
             
@@ -379,8 +384,8 @@
             }
 
             async function showShareView(shareId) {
-                mainView.classList.add('hidden');
-                shareViewSection.classList.remove('hidden');
+                if(mainView) mainView.classList.add('hidden');
+                if(shareViewSection) shareViewSection.classList.remove('hidden');
 
                 try {
                     const response = await fetch(`/status/${shareId}`);
@@ -392,19 +397,21 @@
                     }
 
                     const downloadBtn = document.getElementById('share-download-btn');
-                    downloadBtn.href = `/download/${data.result_file}`;
-                    downloadBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"></path><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"></path></svg> 下載檔案 (${data.result_file})`;
-
+                    if (downloadBtn) {
+                        downloadBtn.href = `/download/${data.result_file}`;
+                        downloadBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z"></path><path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z"></path></svg> 下載檔案 (${data.result_file})`;
+                    }
+                    
                     const passwordBox = document.getElementById('share-password-box');
-                    passwordBox.value = data.password_file_content || '此壓縮檔沒有隨機密碼。';
+                    if (passwordBox) passwordBox.value = data.password_file_content || '此壓縮檔沒有隨機密碼。';
 
                     const goToMainSiteBtn = document.getElementById('go-to-main-site-btn');
-                    goToMainSiteBtn.onclick = () => {
+                    if (goToMainSiteBtn) goToMainSiteBtn.onclick = () => {
                         window.location.href = window.location.pathname;
                     };
 
                 } catch (error) {
-                    shareViewSection.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center">${error.message}</div>`;
+                    if (shareViewSection) shareViewSection.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center">${error.message}</div>`;
                 }
             }
 
