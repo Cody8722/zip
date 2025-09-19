@@ -131,7 +131,16 @@
             </div>
         </main>
         <footer class="text-center mt-8 text-sm text-gray-500">
-             <p>所有檔案將永久儲存於 MongoDB 資料庫中 (免費額度 512MB)。</p>
+             <p>所有檔案將永久儲存於 MongoDB 資料庫中。</p>
+             <div id="storage-stats-container" class="max-w-xs mx-auto mt-4">
+                 <div class="flex justify-between text-xs font-medium text-gray-600">
+                    <span class="font-bold">資料庫儲存空間 (免費額度: 512MB)</span>
+                    <span id="storage-text">正在計算...</span>
+                 </div>
+                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                     <div id="storage-bar" class="bg-indigo-500 h-2 rounded-full" style="width: 0%"></div>
+                 </div>
+             </div>
         </footer>
     </div>
 
@@ -159,6 +168,10 @@
                     masterPassPrompt: document.getElementById('share-master-pass-prompt'),
                     masterPassInput: document.getElementById('share-master-password'),
                     startBtn: document.getElementById('start-share-decompress-btn')
+                },
+                storage: {
+                    bar: document.getElementById('storage-bar'),
+                    text: document.getElementById('storage-text')
                 }
             };
             let currentTaskId = null;
@@ -200,17 +213,9 @@
                 elements.progressPercentage.textContent = '0%';
                 elements.progressStatus.textContent = '處理中...';
 
-                // *** 關鍵修改：建立 fetch 的設定物件 ***
-                const fetchOptions = {
-                    method: 'POST',
-                    body: body
-                };
-                
-                // *** 關鍵修改：如果 body 是字串，就自動加上 JSON 標頭 ***
+                const fetchOptions = { method: 'POST', body: body };
                 if (typeof body === 'string') {
-                    fetchOptions.headers = {
-                        'Content-Type': 'application/json'
-                    };
+                    fetchOptions.headers = { 'Content-Type': 'application/json' };
                 }
 
                 fetch(endpoint, fetchOptions)
@@ -273,6 +278,7 @@
                 elements.resultButtons.appendChild(downloadFileBtn);
 
                 if (isCompress) {
+                    updateStorageStats();
                     elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center';
                     elements.resultTitle.className = 'text-lg font-medium text-blue-800';
                     if (data.password_file_content) {
@@ -306,6 +312,33 @@
                 elements.resultButtons.appendChild(urlContainer);
                 event.target.closest('button').disabled = true;
             }
+
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+
+            async function updateStorageStats() {
+                try {
+                    const response = await fetch('/storage-stats');
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const used = data.used_space;
+                    const total = data.total_space;
+                    const percentage = total > 0 ? (used / total) * 100 : 0;
+                    elements.storage.bar.style.width = `${percentage}%`;
+                    elements.storage.text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
+                    if (percentage > 90) elements.storage.bar.className = 'bg-red-500 h-2 rounded-full';
+                    else if (percentage > 70) elements.storage.bar.className = 'bg-yellow-500 h-2 rounded-full';
+                    else elements.storage.bar.className = 'bg-indigo-500 h-2 rounded-full';
+                } catch (error) {
+                    elements.storage.text.textContent = '無法取得資訊';
+                }
+            }
             
             async function showShareView(shareId) {
                 elements.mainView.classList.add('hidden');
@@ -315,16 +348,12 @@
                     if (!response.ok) throw new Error('找不到分享的檔案或連結已過期。');
                     const data = await response.json();
                     if (data.type !== 'compress' || !data.result_filename) throw new Error('此連結不是一個有效的分享連結。');
-
                     elements.share.filename.textContent = `準備解壓縮檔案: ${data.result_filename}`;
-                    
                     const needsMasterPass = data.password_file_content && data.password_file_content.includes('(特殊密碼層)');
                     if (needsMasterPass) {
                         elements.share.masterPassPrompt.classList.remove('hidden');
                     }
-
                     elements.share.startBtn.onclick = () => {
-                        // *** 關鍵修改：將要傳送的資料打包成 JSON 字串 ***
                         const body = JSON.stringify({
                             master_password: needsMasterPass ? elements.share.masterPassInput.value : null
                         });
@@ -340,6 +369,7 @@
             if (shareId) {
                 showShareView(shareId);
             }
+            updateStorageStats();
         });
     </script>
 </body>
