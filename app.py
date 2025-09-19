@@ -119,13 +119,12 @@ def compression_worker(task_id_str):
         update_task_log(task_id, "✅ 壓縮流程結束。")
         final_filename = os.path.basename(current_file)
 
-        # 將最終檔案存入 GridFS
         update_task_log(task_id, "日誌: 正在將最終檔案存入安全資料庫...")
         with open(current_file, 'rb') as f_in:
             file_id = fs.put(f_in, filename=final_filename)
         update_task_log(task_id, "✅ 檔案儲存成功！")
         
-        os.remove(current_file) # 清理本地暫存檔
+        os.remove(current_file)
 
         tasks_collection.update_one({'_id': task_id}, {'$set': { 
             'status': '完成', 
@@ -188,7 +187,6 @@ def decompression_worker(task_id_str):
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        # 將最終解壓縮的檔案也存入 GridFS
         final_filename = os.path.basename(current_file)
         with open(current_file, 'rb') as f_in:
             file_id = fs.put(f_in, filename=final_filename)
@@ -252,7 +250,6 @@ def start_shared_decompression(compress_task_id):
         file_id = ObjectId(original_task['result_file_id'])
         filename = original_task['result_filename']
         
-        # 從 GridFS 讀取檔案並寫入暫存區
         grid_out = fs.get(file_id)
         filepath = os.path.join(UPLOAD_FOLDER, f"share_{filename}")
         with open(filepath, 'wb') as f_out:
@@ -271,6 +268,21 @@ def start_shared_decompression(compress_task_id):
         return jsonify({'task_id': str(new_task_id)})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# 新增：儲存空間統計 API
+@app.route('/storage-stats')
+def storage_stats():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        stats = db.command('dbstats')
+        # fsUsedSize 是 GridFS 已使用的空間 (以 bytes 為單位)
+        used_space = stats.get('fsUsedSize', 0)
+        # 免費方案的總空間是 512 MB
+        total_space = 512 * 1024 * 1024
+        return jsonify({'used_space': used_space, 'total_space': total_space})
+    except Exception as e:
+        logging.error(f"無法取得儲存統計資料: {e}")
+        return jsonify({'error': '無法取得統計資料'}), 500
 
 @app.route('/cancel/<task_id>', methods=['POST'])
 def cancel_task(task_id):
