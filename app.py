@@ -187,16 +187,23 @@ def decompression_worker(task_id_str):
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        final_filename = os.path.basename(current_file)
+        # *** 關鍵修改：使用原始檔名來儲存最終檔案 ***
+        final_filename_from_archive = os.path.basename(current_file)
+        # 從參數中取得壓縮時儲存的原始檔名
+        expected_filename = params.get('expected_filename')
+        
+        # 如果有預期的檔名，就使用它；否則，使用從壓縮檔中解出的名稱
+        final_filename_to_store = expected_filename if expected_filename else final_filename_from_archive
+
         with open(current_file, 'rb') as f_in:
-            file_id = fs.put(f_in, filename=final_filename)
+            file_id = fs.put(f_in, filename=final_filename_to_store)
         os.remove(current_file)
 
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 
             'progress': 100, 
             'result_file_id': str(file_id),
-            'result_filename': final_filename
+            'result_filename': final_filename_to_store # 使用正確的檔名
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
     except Exception as e:
@@ -258,7 +265,9 @@ def start_shared_decompression(compress_task_id):
         params = {
             'original_file': filepath,
             'password_list': parse_password_text(original_task.get('password_file_content', '')),
-            'master_pass': request.get_json().get('master_password')
+            'master_pass': request.get_json().get('master_password'),
+            # *** 關鍵修改：將原始檔名傳遞給解壓縮任務 ***
+            'expected_filename': original_task.get('params', {}).get('raw_filename')
         }
         
         new_task = {'type': 'decompress', 'status': '處理中', 'params': params, 'created_at': datetime.utcnow()}
