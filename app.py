@@ -18,6 +18,7 @@ import logging
 from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 from gridfs import GridFS
+from urllib.parse import quote # *** 關鍵修改：引入編碼工具 ***
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,7 +49,7 @@ try:
     logging.info("✅ 成功連線至 MongoDB！")
     db = client['compressor_db']
     tasks_collection = db['tasks']
-    fs = GridFS(db) # 初始化 GridFS
+    fs = GridFS(db)
 except Exception as e:
     db_connection_error = e
     logging.error(f"❌ 應用程式啟動失敗: {e}")
@@ -108,7 +109,7 @@ def compression_worker(task_id_str):
 
             if format_name in ('zip', '7z'):
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z: z.write(current_file, os.path.basename(current_file))
-            else: # TAR
+            else:
                 mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
                 with tarfile.open(output_filename, mode) as tf: tf.add(current_file, arcname=os.path.basename(current_file))
             
@@ -172,7 +173,7 @@ def decompression_worker(task_id_str):
             
             if filename.endswith(('.zip', '.7z')):
                 with py7zr.SevenZipFile(current_file, 'r', password=password) as z: z.extractall(path=output_path)
-            else: # TAR
+            else:
                 with tarfile.open(current_file, 'r:*') as tf: tf.extractall(path=output_path)
             
             if current_file != original_file: os.remove(current_file)
@@ -187,12 +188,9 @@ def decompression_worker(task_id_str):
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        # *** 關鍵修改：使用原始檔名來儲存最終檔案 ***
         final_filename_from_archive = os.path.basename(current_file)
-        # 從參數中取得壓縮時儲存的原始檔名
         expected_filename = params.get('expected_filename')
         
-        # 如果有預期的檔名，就使用它；否則，使用從壓縮檔中解出的名稱
         final_filename_to_store = expected_filename if expected_filename else final_filename_from_archive
 
         with open(current_file, 'rb') as f_in:
@@ -203,7 +201,7 @@ def decompression_worker(task_id_str):
             'status': '完成', 
             'progress': 100, 
             'result_file_id': str(file_id),
-            'result_filename': final_filename_to_store # 使用正確的檔名
+            'result_filename': final_filename_to_store
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
     except Exception as e:
@@ -222,10 +220,15 @@ def compress_route():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
     if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
     
-    file = request.files['file']; filename = secure_filename(file.filename)
+    file = request.files['file']
+    # *** 關鍵修改：儲存原始檔名，而非安全檔名 ***
+    original_filename = file.filename
+    safe_filename = secure_filename(file.filename)
+
     try:
         params = {
-            'raw_filename': filename, 'iterations': int(request.form.get('iterations', 5)),
+            'raw_filename': original_filename, # 使用原始檔名
+            'iterations': int(request.form.get('iterations', 5)),
             'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
             'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
@@ -238,7 +241,8 @@ def compress_route():
         task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
         task_id = tasks_collection.insert_one(task).inserted_id
         
-        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{filename}")
+        # 使用安全檔名來儲存暫存檔
+        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{safe_filename}")
         file.save(filepath)
         
         tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
@@ -258,7 +262,7 @@ def start_shared_decompression(compress_task_id):
         filename = original_task['result_filename']
         
         grid_out = fs.get(file_id)
-        filepath = os.path.join(UPLOAD_FOLDER, f"share_{filename}")
+        filepath = os.path.join(UPLOAD_FOLDER, f"share_{secure_filename(filename)}")
         with open(filepath, 'wb') as f_out:
             f_out.write(grid_out.read())
 
@@ -266,7 +270,6 @@ def start_shared_decompression(compress_task_id):
             'original_file': filepath,
             'password_list': parse_password_text(original_task.get('password_file_content', '')),
             'master_pass': request.get_json().get('master_password'),
-            # *** 關鍵修改：將原始檔名傳遞給解壓縮任務 ***
             'expected_filename': original_task.get('params', {}).get('raw_filename')
         }
         
@@ -278,15 +281,12 @@ def start_shared_decompression(compress_task_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-# 新增：儲存空間統計 API
 @app.route('/storage-stats')
 def storage_stats():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
     try:
         stats = db.command('dbstats')
-        # fsUsedSize 是 GridFS 已使用的空間 (以 bytes 為單位)
         used_space = stats.get('fsUsedSize', 0)
-        # 免費方案的總空間是 512 MB
         total_space = 512 * 1024 * 1024
         return jsonify({'used_space': used_space, 'total_space': total_space})
     except Exception as e:
@@ -317,7 +317,12 @@ def download_file(task_id):
         
         grid_out = fs.get(file_id)
         
-        return send_file(grid_out, download_name=filename, as_attachment=True)
+        # *** 關鍵修改：手動設定包含 UTF-8 編碼的下載標頭 ***
+        response = send_file(grid_out, mimetype='application/octet-stream', as_attachment=True, download_name=filename)
+        encoded_filename = quote(filename.encode('utf-8'))
+        response.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
+        return response
+
     except Exception as e:
         logging.error(f"下載檔案時發生錯誤: {e}")
         return "下載檔案時發生內部錯誤。", 500
