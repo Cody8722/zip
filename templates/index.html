@@ -1,500 +1,451 @@
-<!DOCTYPE html>
-<html lang="zh-Hant" class="">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多功能線上壓縮工具</title>
-    
-    <script>
-        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    </script>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { darkMode: 'class' }
-    </script>
+import os
+import zipfile
+import tarfile
+import py7zr
+import time
+import shutil
+import string
+import random
+import re
+import threading
+import hashlib
+import base64
+from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, send_file
+from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime, timedelta
+import logging
+from werkzeug.utils import secure_filename
+from cryptography.fernet import Fernet
+from gridfs import GridFS
+from urllib.parse import quote
+import qrcode
+import io
+import secrets
 
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .log-box { font-family: 'Courier New', Courier, monospace; }
-        .tab-button { transition: all 0.3s; padding: 0.75rem 0.25rem; border-bottom-width: 2px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; white-space: nowrap; border-color: transparent;}
-        .tab-button.active { border-color: #3b82f6; color: #3b82f6; }
-        .dark .tab-button.active { background-color: #1e3a8a; color: #e0f2fe;}
-        .fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .drop-zone {
-            border: 2px dashed #9ca3af;
-            transition: all 0.3s;
-        }
-        .dark .drop-zone { border-color: #4b5563; }
-        .drop-zone.drag-over {
-            border-color: #3b82f6;
-            background-color: #eff6ff;
-        }
-        .dark .drop-zone.drag-over { background-color: #1e3a8a; }
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- 設定 ---
+UPLOAD_FOLDER = '/tmp/compressor_uploads'
+OUTPUT_FOLDER = '/tmp/compressor_outputs'
+
+for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
+    os.makedirs(folder, exist_ok=True)
+
+# --- 資料庫與加密金鑰連線 ---
+MONGO_URI = os.environ.get('MONGO_URI')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+
+client = None; db = None; tasks_collection = None; db_connection_error = None; cipher_suite = None; fs = None
+
+try:
+    if not MONGO_URI: raise ValueError("錯誤：找不到 MONGO_URI 環境變數。")
+    if not SECRET_KEY: raise ValueError("安全性錯誤：找不到 SECRET_KEY 環境變數。")
+    
+    key_material = hashlib.sha256(SECRET_KEY.encode()).digest()
+    key = base64.urlsafe_b64encode(key_material)
+    cipher_suite = Fernet(key)
+
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    client.admin.command('ping')
+    logging.info("✅ 成功連線至 MongoDB！")
+    db = client['compressor_db']
+    tasks_collection = db['tasks']
+    fs = GridFS(db)
+except Exception as e:
+    db_connection_error = e
+    logging.error(f"❌ 應用程式啟動失敗: {e}")
+
+# --- 通用輔助函式 ---
+def generate_password(length=12):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for i in range(length))
+def update_task_log(task_id, message):
+    tasks_collection.update_one({'_id': task_id}, {'$push': {'logs': message}})
+def update_task_progress(task_id, progress):
+    tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
+def parse_password_text(password_text):
+    password_list = []
+    for line in password_text.strip().split('\n'):
+        match = re.search(r'第 \d+ 層 \((.*?)\):\s*(.*)', line)
+        if match:
+            fname, password = match.groups()
+            password = password.strip()
+            if password == '(特殊密碼層)':
+                password_list.append({'filename': fname.strip(), 'password': 'MASTER_PASSWORD_PLACEHOLDER'})
+            else:
+                password_list.append({'filename': fname.strip(), 'password': None if password == '(無密碼)' else password})
+    return password_list
+
+# --- 背景任務 ---
+def compression_worker(task_id_str):
+    task_id = ObjectId(task_id_str)
+    task = tasks_collection.find_one({'_id': task_id});
+    if not task: return
+    params = task['params']; original_file = params['original_file']
+    
+    try:
+        iterations, use_master_pass, master_pass, master_pass_interval = \
+            params['iterations'], params['use_master_pass'], params['master_pass'], params['master_pass_interval']
         
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(0, 0, 0, 0.6);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 50;
-            opacity: 0; transition: opacity 0.3s ease;
-            pointer-events: none;
-        }
-        .modal-overlay.visible { opacity: 1; pointer-events: auto; }
-        .modal-content {
-            background-color: white; padding: 2rem; border-radius: 0.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            transform: scale(0.95); transition: transform 0.3s ease;
-        }
-        .dark .modal-content { background-color: #1f2937; }
-        .modal-overlay.visible .modal-content { transform: scale(1); }
-    </style>
-</head>
-<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300 transition-colors duration-300">
+        password_file_content = "--- 壓縮密碼表 ---\n"
+        formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz', 'tarbz2':'.tar.bz2', 'tarxz':'.tar.xz'}
+        current_file = original_file
 
-    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
-        <header class="text-center mb-8 relative">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">多功能線上壓縮工具</h1>
-            <p class="text-gray-600 dark:text-gray-400 mt-2">安全地對您的檔案進行多層壓縮與解壓縮。</p>
+        for i in range(1, iterations + 1):
+            if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
+                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
+
+            format_name = params['formats'][(i - 1) % len(params['formats'])]
+            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[format_name]}")
             
-            <button id="theme-toggle" type="button" class="absolute top-0 right-0 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 rounded-lg text-sm p-2.5">
-                <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
-                <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.464A1 1 0 106.465 13.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 11a1 1 0 100-2H4a1 1 0 100 2h1zM4.54 5.46A1 1 0 015.95 6.874l-.707.707a1 1 0 11-1.414-1.414l.707-.707z"></path></svg>
-            </button>
-        </header>
+            password = None; log_pwd = "(無密碼)"
+            if use_master_pass and i % master_pass_interval == 0:
+                password = master_pass; log_pwd = "(特殊密碼層)"
+            elif (params['encrypt_odd'] and i % 2 != 0) or (not params['encrypt_odd'] and i in params['manual_layers']):
+                if format_name in ('zip', '7z'):
+                    password = generate_password(); log_pwd = password
 
-        <main class="bg-white rounded-lg shadow-lg p-6 md:p-8 dark:bg-gray-800">
-            <div id="main-view">
-                <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
-                    <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                        <button id="tab-compress" class="tab-button active">壓縮</button>
-                        <button id="tab-decompress" class="tab-button text-gray-500 dark:text-gray-400">解壓縮</button>
-                        <button id="tab-history" class="tab-button text-gray-500 dark:text-gray-400">歷史紀錄</button>
-                    </nav>
-                </div>
-                
-                <div id="compress-section">
-                    <form id="compress-form">
-                        <fieldset class="space-y-4">
-                            <div id="drop-zone-compress" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
-                                <input id="file-compress" name="file" type="file" required class="hidden">
-                                <label for="file-compress" class="cursor-pointer">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                                        <span class="font-medium text-blue-600 dark:text-blue-400">點擊此處上傳檔案</span>
-                                        或將檔案拖曳至此
-                                    </p>
-                                    <p id="file-name-display-compress" class="mt-1 text-xs text-gray-500"></p>
-                                </label>
-                            </div>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
-                                <div>
-                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">壓縮次數:</label>
-                                    <input type="number" id="iterations" name="iterations" value="5" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                </div>
-                                <div>
-                                    <label for="formats" class="block text-sm font-medium text-gray-700 dark:text-gray-300">格式順序:</label>
-                                    <input type="text" id="formats" name="formats" value="zip,7z,targz" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">一般加密規則:</label>
-                                <div class="space-y-2">
-                                    <div class="flex items-center"><input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"><label for="encrypt-odd" class="ml-3 block text-sm text-gray-900 dark:text-gray-300">加密所有奇數層 (1, 3, 5...)</label></div>
-                                    <div class="flex items-center"><input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"><label for="encrypt-manual" class="ml-3 block text-sm text-gray-900 dark:text-gray-300">手動指定層數:</label><input type="text" id="manual_layers" name="manual_layers" placeholder="例如: 2,4" class="ml-2 block w-full md:w-auto rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"></div>
-                                </div>
-                            </div>
-                        </fieldset>
-                        <fieldset id="master-password-fieldset" class="mt-6 border-t pt-4 space-y-4 dark:border-gray-700">
-                             <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">特殊加密設定 (選填)</legend>
-                            <div class="flex items-start">
-                                 <div class="flex items-center h-5">
-                                    <input id="use_master_pass" name="use_master_pass" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600">
-                                </div>
-                                <div class="ml-3 text-sm">
-                                    <label for="use_master_pass" class="font-medium text-gray-800 dark:text-gray-200">啟用特殊密碼</label>
-                                    <p class="text-gray-500 dark:text-gray-400">在固定間隔使用您指定的密碼進行加密。</p>
-                                </div>
-                            </div>
-                            <div id="master-password-inputs" class="space-y-4 hidden">
-                                 <div>
-                                    <label for="master_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">您的特殊密碼:</label>
-                                    <input type="password" id="master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                </div>
-                                <div>
-                                    <label for="master_password_interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">間隔層數 (每 N 層使用一次):</label>
-                                    <input type="number" id="master_password_interval" name="master_password_interval" value="10" min="2" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                </div>
-                            </div>
-                        </fieldset>
-                        <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
-                    </form>
-                </div>
-                <!-- *** 關鍵修改：新增手動解壓縮介面 *** -->
-                <div id="decompress-section" class="hidden">
-                    <form id="decompress-form">
-                        <fieldset class="space-y-4">
-                            <div id="drop-zone-decompress" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
-                                <input id="file-decompress" name="file" type="file" required class="hidden">
-                                <label for="file-decompress" class="cursor-pointer">
-                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                                        <span class="font-medium text-blue-600 dark:text-blue-400">點擊選擇要解壓縮的檔案</span>
-                                        或將檔案拖曳至此
-                                    </p>
-                                    <p id="file-name-display-decompress" class="mt-1 text-xs text-gray-500"></p>
-                                </label>
-                            </div>
-                            <div>
-                               <label for="passwords" class="block text-sm font-medium text-gray-700 dark:text-gray-300">密碼表:</label>
-                               <textarea id="passwords" name="passwords" rows="4" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="請將 passwords.txt 的內容完整貼於此處..."></textarea>
-                            </div>
-                            <div>
-                               <label for="decompress_master_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">特殊密碼 (選填):</label>
-                               <input type="password" id="decompress_master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="若檔案需要特殊密碼，請在此輸入">
-                            </div>
-                        </fieldset>
-                        <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 dark:focus:ring-green-800">開始解壓縮</button></div>
-                    </form>
-                </div>
-                <div id="history-section" class="hidden">
-                     <div class="flex justify-between items-center mb-4">
-                         <h2 class="text-lg font-medium text-gray-900 dark:text-white">本機壓縮歷史</h2>
-                         <button id="clear-history-btn" class="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">清除所有紀錄</button>
-                     </div>
-                     <div id="history-list" class="space-y-3">
-                         <!-- JS will populate this -->
-                     </div>
-                </div>
-            </div>
+            password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
+            update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
+
+            if format_name in ('zip', '7z'):
+                with py7zr.SevenZipFile(output_filename, 'w', password=password) as z: z.write(current_file, os.path.basename(current_file))
+            else:
+                mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
+                with tarfile.open(output_filename, mode) as tf: tf.add(current_file, arcname=os.path.basename(current_file))
             
-            <div id="progress-section" class="hidden fade-in mt-8">
-                 <h2 class="text-2xl font-semibold mb-4 border-b pb-2 dark:border-gray-700">處理進度</h2>
-                 <div class="mb-4">
-                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700 dark:text-gray-300">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
-                 </div>
-                 <div class="text-center my-4"><button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-900 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-800">取消操作</button></div>
-                 <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700 dark:text-gray-300">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap dark:bg-black dark:text-gray-300"></div></div>
-                 <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900">
-                    <h3 id="result-title" class="text-lg font-medium text-blue-800 dark:text-blue-300">任務完成！</h3>
-                    <div id="result-buttons" class="mt-4 flex flex-wrap justify-center items-center gap-4"></div>
-                 </div>
-            </div>
+            if current_file != original_file: os.remove(current_file)
+            current_file = output_filename
+            update_task_progress(task_id, int((i / iterations) * 100))
+        
+        update_task_log(task_id, "✅ 壓縮流程結束。")
+        final_filename = os.path.basename(current_file)
 
-            <div id="share-view-section" class="hidden">
-                 <h2 class="text-2xl font-semibold mb-2 text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
-                 <p class="text-gray-600 dark:text-gray-400 mb-6" id="share-filename">正在準備檔案...</p>
-                 <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 dark:bg-yellow-900 dark:border-yellow-600">
-                    <label for="share-master-password" class="block text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ 此檔案需要特殊密碼</label>
-                    <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">請向分享者索取，並在此輸入：</p>
-                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
-                 </div>
-                 <div class="text-center"><button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800"><svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd"></path></svg>開始解壓縮並準備下載</button></div>
-            </div>
-        </main>
-        <footer class="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
-             <p>所有檔案將永久儲存於 MongoDB 資料庫中。</p>
-             <div id="storage-stats-container" class="max-w-xs mx-auto mt-4">
-                 <div class="flex justify-between text-xs font-medium text-gray-600 dark:text-gray-400">
-                    <span class="font-bold">資料庫儲存空間 (免費額度: 512MB)</span>
-                    <span id="storage-text">正在計算...</span>
-                 </div>
-                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1 dark:bg-gray-700">
-                     <div id="storage-bar" class="bg-indigo-500 h-2 rounded-full" style="width: 0%"></div>
-                 </div>
-             </div>
-        </footer>
-    </div>
+        update_task_log(task_id, "日誌: 正在將最終檔案存入安全資料庫...")
+        with open(current_file, 'rb') as f_in:
+            file_id = fs.put(f_in, filename=final_filename)
+        update_task_log(task_id, "✅ 檔案儲存成功！")
+        
+        os.remove(current_file)
+
+        delete_token = secrets.token_hex(16)
+
+        tasks_collection.update_one({'_id': task_id}, {'$set': { 
+            'status': '完成', 
+            'progress': 100, 
+            'result_file_id': str(file_id),
+            'result_filename': final_filename, 
+            'password_file_content': password_file_content,
+            'delete_token': delete_token
+        }})
+    except Exception as e:
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
+        update_task_log(task_id, f"❌ 嚴重錯誤: {e}")
+    finally:
+        if os.path.exists(original_file): os.remove(original_file)
+
+def decompression_worker(task_id_str):
+    task_id = ObjectId(task_id_str)
+    task = tasks_collection.find_one({'_id': task_id});
+    if not task: return
+    params = task['params']; original_file = params['original_file']
+
+    try:
+        password_list, master_pass = params['password_list'], params.get('master_pass')
+        update_task_log(task_id, f"開始解壓縮檔案: {os.path.basename(original_file)}")
+        if not password_list: raise ValueError("找不到可用的密碼表。")
+
+        current_file = original_file; total_layers = len(password_list)
+
+        for i, layer_info in enumerate(reversed(password_list)):
+            if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
+                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
+
+            layer_num = total_layers - i
+            filename, password = layer_info['filename'], layer_info['password']
+            password_usage_log = "否"
+            if password == 'MASTER_PASSWORD_PLACEHOLDER':
+                if not master_pass: raise ValueError(f"第 {layer_num} 層需要特殊密碼。")
+                password = master_pass; password_usage_log = "是 (使用特殊密碼)"
+            elif password:
+                password_usage_log = "是 (使用儲存的密碼)"
+
+            update_task_log(task_id, f"--- 第 {layer_num}/{total_layers} 層 ({filename}) ---")
+            update_task_log(task_id, f"日誌: 本層是否需要密碼: {password_usage_log}")
+            
+            output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
+            
+            if filename.endswith(('.zip', '.7z')):
+                with py7zr.SevenZipFile(current_file, 'r', password=password) as z: z.extractall(path=output_path)
+            else:
+                with tarfile.open(current_file, 'r:*') as tf: tf.extractall(path=output_path)
+            
+            if current_file != original_file: os.remove(current_file)
+            
+            extracted_files = os.listdir(output_path)
+            if not extracted_files: raise Exception("解壓縮後找不到任何檔案。")
+
+            new_file_path = os.path.join(OUTPUT_FOLDER, extracted_files[0])
+            shutil.move(os.path.join(output_path, extracted_files[0]), new_file_path)
+            shutil.rmtree(output_path)
+            current_file = new_file_path
+            
+            update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
+
+        final_filename_from_archive = os.path.basename(current_file)
+        expected_filename = params.get('expected_filename')
+        
+        final_filename_to_store = expected_filename if expected_filename else final_filename_from_archive
+
+        with open(current_file, 'rb') as f_in:
+            file_id = fs.put(f_in, filename=final_filename_to_store)
+        os.remove(current_file)
+
+        tasks_collection.update_one({'_id': task_id}, {'$set': {
+            'status': '完成', 
+            'progress': 100, 
+            'result_file_id': str(file_id),
+            'result_filename': final_filename_to_store
+        }})
+        update_task_log(task_id, "✅ 解壓縮流程結束。")
+    except Exception as e:
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
+        update_task_log(task_id, f"❌ 錯誤: {e}")
+    finally:
+        if os.path.exists(original_file): os.remove(original_file)
+
+# --- API 路由 ---
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/compress', methods=['POST'])
+def compress_route():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
     
-    <div id="qrcode-modal" class="modal-overlay">
-         <div class="modal-content text-center"><h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mb-4">手機掃描分享</h3><div id="qrcode-container" class="p-2 border rounded-lg inline-block bg-white"></div><p class="text-sm text-gray-500 dark:text-gray-400 mt-2">使用手機相機掃描以上 QR Code</p><div class="mt-6"><button id="close-modal-btn" type="button" class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600">關閉</button></div></div>
-    </div>
+    file = request.files['file']
+    original_filename = file.filename
+    safe_filename = secure_filename(file.filename)
 
-    <div id="delete-confirm-modal" class="modal-overlay">
-        <div class="modal-content text-center"><div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900"><svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path></svg></div><h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mt-4">永久刪除檔案</h3><p class="text-sm text-gray-500 dark:text-gray-400 mt-2">您確定要刪除這個檔案嗎？<br>此操作無法復原，分享連結將會失效。</p><div class="mt-6 flex justify-center gap-4"><button id="cancel-delete-btn" class="rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">取消</button><button id="confirm-delete-btn" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">確認刪除</button></div></div>
-    </div>
-    
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const elements = {
-                mainView: document.getElementById('main-view'),
-                progressSection: document.getElementById('progress-section'),
-                shareView: document.getElementById('share-view-section'),
-                compressForm: document.getElementById('compress-form'),
-                decompressForm: document.getElementById('decompress-form'), // *** 新增 ***
-                cancelButton: document.getElementById('cancel-button'),
-                logBox: document.getElementById('log-box'),
-                progressBar: document.getElementById('progress-bar'),
-                progressPercentage: document.getElementById('progress-percentage'),
-                progressStatus: document.getElementById('progress-status'),
-                resultSection: document.getElementById('result-section'),
-                resultTitle: document.getElementById('result-title'),
-                resultButtons: document.getElementById('result-buttons'),
-                useMasterPassCheckbox: document.getElementById('use_master_pass'),
-                masterPassInputs: document.getElementById('master-password-inputs'),
-                tabs: { compress: document.getElementById('tab-compress'), decompress: document.getElementById('tab-decompress'), history: document.getElementById('tab-history') },
-                sections: { compress: document.getElementById('compress-section'), decompress: document.getElementById('decompress-section'), history: document.getElementById('history-section') },
-                dropZoneCompress: document.getElementById('drop-zone-compress'), // *** 修改 ***
-                fileInputCompress: document.getElementById('file-compress'), // *** 修改 ***
-                fileNameDisplayCompress: document.getElementById('file-name-display-compress'), // *** 修改 ***
-                dropZoneDecompress: document.getElementById('drop-zone-decompress'), // *** 新增 ***
-                fileInputDecompress: document.getElementById('file-decompress'), // *** 新增 ***
-                fileNameDisplayDecompress: document.getElementById('file-name-display-decompress'), // *** 新增 ***
-                historyList: document.getElementById('history-list'),
-                clearHistoryBtn: document.getElementById('clear-history-btn'),
-                deleteConfirmModal: document.getElementById('delete-confirm-modal'),
-                cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
-                confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
-                qrCodeModal: document.getElementById('qrcode-modal'),
-                qrCodeContainer: document.getElementById('qrcode-container'),
-                closeModalBtn: document.getElementById('close-modal-btn'),
-                themeToggleBtn: document.getElementById('theme-toggle'),
-                themeToggleDarkIcon: document.getElementById('theme-toggle-dark-icon'),
-                themeToggleLightIcon: document.getElementById('theme-toggle-light-icon'),
-                share: {
-                    filename: document.getElementById('share-filename'),
-                    masterPassPrompt: document.getElementById('share-master-pass-prompt'),
-                    masterPassInput: document.getElementById('share-master-password'),
-                    startBtn: document.getElementById('start-share-decompress-btn')
-                },
-                storage: {
-                    bar: document.getElementById('storage-bar'),
-                    text: document.getElementById('storage-text')
-                }
-            };
-            let currentTaskId = null;
-            let taskToDelete = null;
+    try:
+        params = {
+            'raw_filename': original_filename,
+            'iterations': int(request.form.get('iterations', 5)),
+            'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
+            'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
+            'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
+            'use_master_pass': request.form.get('use_master_pass') == 'on',
+            'master_pass': request.form.get('master_password'),
+            'master_pass_interval': int(request.form.get('master_password_interval', '10'))
+        }
+        if params['use_master_pass'] and not params['master_pass']: raise ValueError("已啟用特殊密碼，但未提供。")
+        
+        task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+        task_id = tasks_collection.insert_one(task).inserted_id
+        
+        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{safe_filename}")
+        file.save(filepath)
+        
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
+        threading.Thread(target=compression_worker, args=(str(task_id),)).start()
+        return jsonify({'task_id': str(task_id)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
-            // --- 事件監聽 ---
-            Object.keys(elements.tabs).forEach(mode => {
-                elements.tabs[mode].addEventListener('click', () => {
-                    Object.keys(elements.tabs).forEach(m => {
-                        elements.tabs[m].classList.toggle('active', m === mode);
-                        elements.sections[m].classList.toggle('hidden', m !== mode);
-                    });
-                    if (mode === 'history') renderHistory();
-                });
-            });
+@app.route('/decompress-manual', methods=['POST'])
+def decompress_manual_route():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
 
-            // *** 關鍵修改：將拖曳事件抽象化成一個函式 ***
-            function setupDropZone(dropZone, fileInput, fileNameDisplay) {
-                dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-                ['dragleave', 'dragend'].forEach(type => { dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over')); });
-                dropZone.addEventListener('drop', e => {
-                    e.preventDefault();
-                    dropZone.classList.remove('drag-over');
-                    if (e.dataTransfer.files.length) {
-                        fileInput.files = e.dataTransfer.files;
-                        fileNameDisplay.textContent = fileInput.files[0].name;
-                    }
-                });
-                fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) fileNameDisplay.textContent = fileInput.files[0].name; });
-            }
-            
-            setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress);
-            setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress);
-            
-            elements.clearHistoryBtn.addEventListener('click', () => { localStorage.removeItem('compressHistory'); renderHistory(); });
-            elements.cancelDeleteBtn.addEventListener('click', () => elements.deleteConfirmModal.classList.remove('visible'));
-            elements.confirmDeleteBtn.addEventListener('click', () => {
-                if (taskToDelete) { deleteFileFromServer(taskToDelete.id, taskToDelete.token); taskToDelete = null; }
-                elements.deleteConfirmModal.classList.remove('visible');
-            });
-            
-            elements.useMasterPassCheckbox.addEventListener('change', () => elements.masterPassInputs.classList.toggle('hidden', !elements.useMasterPassCheckbox.checked));
-            elements.compressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/compress', new FormData(elements.compressForm)); });
-            // *** 新增 ***
-            elements.decompressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/decompress-manual', new FormData(elements.decompressForm)); });
+    file = request.files['file']
+    filename = secure_filename(file.filename)
+    password_text = request.form.get('passwords', '')
+    master_pass = request.form.get('master_password')
 
-            elements.cancelButton.addEventListener('click', async () => { if (currentTaskId) await fetch(`/cancel/${currentTaskId}`, { method: 'POST' }); });
-            elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
-            elements.qrCodeModal.addEventListener('click', (e) => { if (e.target === elements.qrCodeModal) elements.qrCodeModal.classList.remove('visible'); });
-            elements.themeToggleBtn.addEventListener('click', function() {
-                const isDark = document.documentElement.classList.toggle('dark');
-                localStorage.setItem('color-theme', isDark ? 'dark' : 'light');
-                updateThemeIcons(isDark);
-            });
+    try:
+        if not password_text:
+            raise ValueError("請貼上密碼表內容。")
 
-            // --- (以下函式邏輯不變，只貼上必要的) ---
-            function startTask(endpoint, body) {
-                 elements.mainView.classList.add('hidden');
-                elements.shareView.classList.add('hidden');
-                elements.progressSection.classList.remove('hidden');
-                elements.resultSection.classList.add('hidden');
-                elements.cancelButton.classList.remove('hidden');
-                elements.logBox.innerHTML = '';
-                elements.progressBar.style.width = '0%';
-                elements.progressPercentage.textContent = '0%';
-                elements.progressStatus.textContent = '處理中...';
-                 const fetchOptions = { method: 'POST', body: body };
-                if (typeof body === 'string') {
-                    fetchOptions.headers = { 'Content-Type': 'application/json' };
-                }
-                 fetch(endpoint, fetchOptions)
-                    .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
-                    .then(data => {
-                        if (data.task_id) { currentTaskId = data.task_id; checkStatus(currentTaskId); } 
-                        else { throw new Error('無法取得任務 ID'); }
+        password_list = parse_password_text(password_text)
+        if not password_list:
+            raise ValueError("無法解析您提供的密碼表，請檢查格式是否正確。")
+
+        params = {
+            'password_list': password_list,
+            'master_pass': master_pass,
+            'expected_filename': file.filename
+        }
+        
+        task = {'type': 'decompress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+        task_id = tasks_collection.insert_one(task).inserted_id
+        
+        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{filename}")
+        file.save(filepath)
+        
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
+        threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
+        return jsonify({'task_id': str(task_id)})
+
+    except Exception as e:
+        if 'task_id' in locals():
+            tasks_collection.delete_one({'_id': task_id})
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
+def start_shared_decompression(compress_task_id):
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        original_task = tasks_collection.find_one({'_id': ObjectId(compress_task_id)})
+        if not original_task or 'result_file_id' not in original_task: raise ValueError("找不到原始壓縮任務或檔案可能已被刪除。")
+        
+        file_id = ObjectId(original_task['result_file_id'])
+        filename = original_task['result_filename']
+        
+        grid_out = fs.get(file_id)
+        filepath = os.path.join(UPLOAD_FOLDER, f"share_{secure_filename(filename)}")
+        with open(filepath, 'wb') as f_out:
+            f_out.write(grid_out.read())
+
+        params = {
+            'original_file': filepath,
+            'password_list': parse_password_text(original_task.get('password_file_content', '')),
+            'master_pass': request.get_json().get('master_password'),
+            'expected_filename': original_task.get('params', {}).get('raw_filename')
+        }
+        
+        new_task = {'type': 'decompress', 'status': '處理中', 'params': params, 'created_at': datetime.utcnow()}
+        new_task_id = tasks_collection.insert_one(new_task).inserted_id
+        
+        threading.Thread(target=decompression_worker, args=(str(new_task_id),)).start()
+        return jsonify({'task_id': str(new_task_id)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/storage-stats')
+def storage_stats():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        pipeline = [{'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}]
+        result = list(db['fs.files'].aggregate(pipeline))
+        used_space = result[0]['total_size'] if result else 0
+        total_space = 512 * 1024 * 1024
+        return jsonify({'used_space': used_space, 'total_space': total_space})
+    except Exception as e:
+        logging.error(f"無法取得儲存統計資料: {e}")
+        return jsonify({'error': '無法取得統計資料'}), 500
+
+@app.route('/cancel/<task_id>', methods=['POST'])
+def cancel_task(task_id):
+    tasks_collection.update_one({'_id': ObjectId(task_id)}, {'$set': {'cancel_requested': True}})
+    return jsonify({'status': 'cancellation requested'})
+
+@app.route('/status/<task_id>')
+def task_status(task_id):
+    task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+    if task:
+        task['_id'] = str(task['_id']); return jsonify(task)
+    return jsonify({'error': '找不到任務'}), 404
+
+@app.route('/delete/<task_id>', methods=['POST'])
+def delete_file(task_id):
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        if not token: return jsonify({'error': '缺少 Token'}), 400
+
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task: return jsonify({'error': '找不到任務'}), 404
+        if task.get('delete_token') != token: return jsonify({'error': 'Token 無效'}), 403
+
+        if 'result_file_id' in task and task['result_file_id']:
+            file_id = ObjectId(task['result_file_id'])
+            fs.delete(file_id)
+        
+        tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+            '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
+            '$set': {'status': '已刪除'}
+        })
+        return jsonify({'message': '檔案已成功刪除'})
+    except Exception as e:
+        logging.error(f"刪除檔案時發生錯誤: {e}")
+        return jsonify({'error': '刪除檔案時發生內部錯誤'}), 500
+
+# *** 關鍵修改：新增批次刪除路由 ***
+@app.route('/delete-batch', methods=['POST'])
+def delete_batch():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        data = request.get_json()
+        tasks_to_delete = data.get('tasks')
+        if not isinstance(tasks_to_delete, list):
+            return jsonify({'error': '無效的請求格式'}), 400
+
+        deleted_count = 0; failed_count = 0
+
+        for task_info in tasks_to_delete:
+            task_id = task_info.get('id'); token = task_info.get('token')
+            if not task_id or not token:
+                failed_count += 1; continue
+            try:
+                task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+                if task and task.get('delete_token') == token:
+                    if 'result_file_id' in task and task['result_file_id']:
+                        fs.delete(ObjectId(task['result_file_id']))
+                    tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+                        '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
+                        '$set': {'status': '已刪除'}
                     })
-                    .catch(error => {
-                        elements.logBox.innerHTML = `錯誤: ${error.error || error.message}`;
-                        elements.progressStatus.textContent = '失敗';
-                        elements.cancelButton.classList.add('hidden');
-                    });
-            }
-             async function checkStatus(taskId) {
-                try {
-                    const response = await fetch(`/status/${taskId}`);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    
-                    elements.progressBar.style.width = `${data.progress || 0}%`;
-                    elements.progressPercentage.textContent = `${data.progress || 0}%`;
-                    elements.logBox.innerHTML = (data.logs || []).join('\n');
-                    elements.logBox.scrollTop = elements.logBox.scrollHeight;
-                     const finalStates = ['完成', '失敗', '已取消'];
-                    if (finalStates.includes(data.status)) {
-                        elements.progressStatus.textContent = data.status;
-                        elements.resultTitle.textContent = `任務${data.status}！`;
-                        elements.resultSection.classList.remove('hidden');
-                        if(data.status === '完成') displayResults(data);
-                        elements.cancelButton.classList.add('hidden');
-                        currentTaskId = null;
-                    } else {
-                        setTimeout(() => checkStatus(taskId), 2000);
-                    }
-                } catch (error) { elements.logBox.innerHTML += `\n檢查狀態時發生錯誤。`; }
-            }
-             function displayResults(data) {
-                elements.resultButtons.innerHTML = '';
-                const isCompress = data.type === 'compress';
-                
-                if (isCompress) saveToHistory(data);
-                if (data.result_file_id) { // Both compress and decompress can have a result file
-                     if (!isCompress) { // Auto-download only for decompress
-                        elements.logBox.innerHTML += '\n\n日誌: 正在自動為您下載檔案...';
-                        window.location.href = `/download/${data._id}`;
-                    }
-                     const downloadFileBtn = document.createElement('a');
-                    downloadFileBtn.href = `/download/${data._id}`;
-                    downloadFileBtn.textContent = `下載檔案 (${data.result_filename})`;
-                    downloadFileBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? 'bg-blue-600' : 'bg-green-600'}`;
-                    elements.resultButtons.appendChild(downloadFileBtn);
-                }
-                 if (isCompress) {
-                    updateStorageStats();
-                    elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900';
-                    elements.resultTitle.className = 'text-lg font-medium text-blue-800 dark:text-blue-300';
-                    if (data.password_file_content) {
-                        const shareBtn = document.createElement('button');
-                        shareBtn.innerHTML = `產生分享連結`;
-                        shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200 dark:text-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800";
-                        shareBtn.onclick = (e) => displayShareLink(e, data);
-                        elements.resultButtons.appendChild(shareBtn);
-                        
-                        const qrBtn = document.createElement('button');
-                        qrBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v3A1.5 1.5 0 0111.5 8h-3A1.5 1.5 0 017 6.5v-3zM8.5 3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 3.5A1.5 1.5 0 0116.5 2h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V4h-.25A1.5 1.5 0 0115 3.5zM7 15a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0113 15v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 017 18v-3zM8.5 14a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 15a1.5 1.5 0 011.5-1.5h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V16h-.25A1.5 1.5 0 0115 15zM3.5 7A1.5 1.5 0 012 8.5v3A1.5 1.5 0 013.5 13h3A1.5 1.5 0 018 11.5v-3A1.5 1.5 0 016.5 7h-3zM3 8.5a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM3.5 15A1.5 1.5 0 012 16.5v.25a.75.75 0 01-1.5 0V16a.75.75 0 01.75-.75h.25A1.5 1.5 0 013.5 15zm13.25.75a.75.75 0 00-1.5 0v.25A1.5 1.5 0 0113.5 18h-.25a.75.75 0 000 1.5h.25A2.75 2.75 0 0016 16.75v-.25a.75.75 0 00-.75-.75z"/></svg>顯示 QR Code`;
-                        qrBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500";
-                        qrBtn.onclick = () => showQrCode(data._id);
-                        elements.resultButtons.appendChild(qrBtn);
-                        
-                        const deleteBtn = document.createElement('button');
-                        deleteBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.58.22-2.365.468a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" /></svg>永久刪除此檔案`;
-                        deleteBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800";
-                        deleteBtn.onclick = () => promptDeleteFile(data._id, data.delete_token);
-                        elements.resultButtons.appendChild(deleteBtn);
-                    }
-                }
-            }
-             function saveToHistory(taskData) {
-                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                const newEntry = {
-                    id: taskData._id,
-                    name: taskData.params.raw_filename,
-                    date: new Date().toLocaleString(),
-                    finalName: taskData.result_filename,
-                    token: taskData.delete_token
-                };
-                history.unshift(newEntry);
-                if(history.length > 50) history.pop();
-                localStorage.setItem('compressHistory', JSON.stringify(history));
-            }
-             function renderHistory() {
-                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                elements.historyList.innerHTML = '';
-                if(history.length === 0) {
-                    elements.historyList.innerHTML = `<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>`;
-                    return;
-                }
-                history.forEach(item => {
-                    const entry = document.createElement('div');
-                    entry.className = 'p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between';
-                    entry.innerHTML = `<div><p class="font-medium text-gray-900 dark:text-white">${item.name}</p><p class="text-sm text-gray-500 dark:text-gray-400">${item.date}</p></div><div class="flex gap-2"><button data-id="${item.id}" class="history-share-btn text-sm text-blue-500 hover:underline">分享</button><button data-id="${item.id}" class="history-qr-btn text-sm text-green-500 hover:underline">QR</button><button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn text-sm text-red-500 hover:underline">刪除</button></div>`;
-                    elements.historyList.appendChild(entry);
-                });
-            }
-             elements.historyList.addEventListener('click', (e) => {
-                const target = e.target;
-                const id = target.dataset.id;
-                if (!id) return;
-                 if (target.classList.contains('history-share-btn')) {
-                    const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${id}`;
-                    navigator.clipboard.writeText(shareUrl).then(() => {
-                        target.textContent = '已複製!';
-                        setTimeout(() => target.textContent = '分享', 2000);
-                    });
-                } else if (target.classList.contains('history-qr-btn')) {
-                    showQrCode(id);
-                } else if (target.classList.contains('history-delete-btn')) {
-                    const token = target.dataset.token;
-                    promptDeleteFile(id, token);
-                }
-            });
-             function promptDeleteFile(taskId, token) {
-                taskToDelete = { id: taskId, token: token };
-                elements.deleteConfirmModal.classList.add('visible');
-            }
-             async function deleteFileFromServer(taskId, token) {
-                try {
-                    const response = await fetch(`/delete/${taskId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token })
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error);
-                    
-                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                    history = history.filter(item => item.id !== taskId);
-                    localStorage.setItem('compressHistory', JSON.stringify(history));
-                    renderHistory();
-                    updateStorageStats();
-                 } catch (error) {
-                    alert(`刪除失敗: ${error.message}`);
-                }
-            }
-            // --- (The rest of the functions are unchanged) ---
-            function displayShareLink(e,d){const t=`${window.location.origin}${window.location.pathname}?share_id=${d._id}`,o=document.createElement("div");o.className="mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700";const n=document.createElement("input");n.type="text",n.value=t,n.readOnly=!0,n.className="flex-grow bg-transparent border-none text-sm p-1";const s=document.createElement("button");s.textContent="複製",s.className="text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500",s.onclick=()=>{n.select(),document.execCommand("copy"),s.textContent="已複製!",setTimeout(()=>{s.textContent="複製"},2e3)},o.appendChild(n),o.appendChild(s),elements.resultButtons.appendChild(o),e.target.closest("button").disabled=!0}
-            function showQrCode(d){elements.qrCodeContainer.innerHTML="";const t=document.createElement("img");t.src=`/qrcode/${d}`,t.alt="Share QR Code",t.width=250,t.height=250,elements.qrCodeContainer.appendChild(t),elements.qrCodeModal.classList.add("visible")}
-            function formatBytes(d,t=2){if(0===d)return"0 Bytes";const o=1024,n=t<0?0:t,s=["Bytes","KB","MB","GB","TB"],e=Math.floor(Math.log(d)/Math.log(o));return parseFloat((d/Math.pow(o,e)).toFixed(n))+" "+s[e]}
-            async function updateStorageStats(){try{const d=await fetch("/storage-stats");if(!d.ok)return;const t=await d.json(),o=t.used_space,n=t.total_space,s=n>0?o/n*100:0;elements.storage.bar.style.width=`${s}%`,elements.storage.text.textContent=`${formatBytes(o)} / ${formatBytes(n)}`,elements.storage.bar.className=s>90?"bg-red-500 h-2 rounded-full":s>70?"bg-yellow-500 h-2 rounded-full":"bg-indigo-500 h-2 rounded-full"}catch(d){elements.storage.text.textContent="無法取得資訊"}}
-            async function showShareView(d){elements.mainView.classList.add("hidden"),elements.shareView.classList.remove("hidden");try{const t=await fetch(`/status/${d}`);if(!t.ok)throw new Error("找不到分享的檔案或連結已過期。");const o=await t.json();if("compress"!==o.type||!o.result_filename)throw new Error("此連結不是一個有效的分享連結。");elements.share.filename.textContent=`準備解壓縮檔案: ${o.result_filename}`;const n=o.password_file_content&&o.password_file_content.includes("(特殊密碼層)");n&&elements.share.masterPassPrompt.classList.remove("hidden"),elements.share.startBtn.onclick=()=>{const t=JSON.stringify({master_password:n?elements.share.masterPassInput.value:null});startTask(`/start-shared-decompression/${d}`,t)}}catch(t){elements.shareView.innerHTML=`<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${t.message}</div>`}}
-            function updateThemeIcons(d){elements.themeToggleDarkIcon.classList.toggle("hidden",!d),elements.themeToggleLightIcon.classList.toggle("hidden",d)}
-            // --- 初始執行 ---
-            updateThemeIcons(document.documentElement.classList.contains('dark'));
-            const shareId = new URLSearchParams(window.location.search).get('share_id');
-            if (shareId) {
-                showShareView(shareId);
-            }
-            updateStorageStats();
-        });
-    </script>
-</body>
-</html>
+                    deleted_count += 1
+                else: failed_count += 1
+            except Exception as e:
+                logging.error(f"批次刪除時發生錯誤 (task_id: {task_id}): {e}"); failed_count += 1
+        
+        return jsonify({'message': '批次刪除處理完成', 'deleted_count': deleted_count, 'failed_count': failed_count})
+    except Exception as e:
+        logging.error(f"批次刪除時發生嚴重錯誤: {e}")
+        return jsonify({'error': '批次刪除時發生內部錯誤'}), 500
+
+@app.route('/qrcode/<task_id>')
+def generate_qr_code(task_id):
+    try:
+        share_url = f"{request.host_url}?share_id={task_id}"
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+        qr.add_data(share_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        img_io = io.BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        return send_file(img_io, mimetype='image/png')
+    except Exception as e:
+        logging.error(f"產生 QR Code 時發生錯誤: {e}")
+        return "無法產生 QR Code", 500
+
+@app.route('/download/<task_id>')
+def download_file(task_id):
+    try:
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task or 'result_file_id' not in task:
+            return "檔案可能已被刪除或不存在。", 404
+        
+        file_id = ObjectId(task['result_file_id'])
+        filename = task['result_filename']
+        
+        grid_out = fs.get(file_id)
+        
+        response = send_file(grid_out, mimetype='application/octet-stream', as_attachment=True, download_name=filename)
+        encoded_filename = quote(filename.encode('utf-8'))
+        response.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
+        return response
+
+    except Exception as e:
+        logging.error(f"下載檔案時發生錯誤: {e}")
+        return "下載檔案時發生內部錯誤。", 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
