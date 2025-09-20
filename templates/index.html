@@ -5,9 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>多功能線上壓縮工具</title>
     
-    <!-- *** 關鍵修改：將深夜模式的判斷，移到所有程式的最前面 *** -->
+    <!-- *** 關鍵修改 1：這個腳本必須在最前面，以防止畫面閃爍 *** -->
     <script>
-        // 為了避免畫面閃爍 (FOUC)，我們需要在載入頁面前就決定好佈景主題。
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
         } else {
@@ -15,13 +14,16 @@
         }
     </script>
     
+    <!-- *** 關鍵修改 2：將 Tailwind 主程式移到前面 *** -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- *** 關鍵修改 3：在主程式載入後，再告訴它我們的設定 *** -->
     <script>
-        // 告訴 Tailwind 我們要用 class 的方式來控制深夜模式
         tailwind.config = {
             darkMode: 'class',
         }
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+
     <style>
         body { font-family: 'Inter', sans-serif; }
         .log-box { font-family: 'Courier New', Courier, monospace; }
@@ -470,7 +472,6 @@
             }
 
             // --- 初始執行 ---
-            // *** 關鍵修改：這段邏輯現在只負責更新圖示，實際的 class 已由 <head> 中的 script 設定 ***
             updateThemeIcons(document.documentElement.classList.contains('dark'));
 
             const shareId = new URLSearchParams(window.location.search).get('share_id');
