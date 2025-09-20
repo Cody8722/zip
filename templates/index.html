@@ -16,6 +16,31 @@
             background-color: #f3f4f6;
             cursor: not-allowed;
         }
+        /* *** 關鍵修改：新增 QR Code 彈出視窗樣式 *** */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.visible .modal-content {
+            transform: scale(1);
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -143,6 +168,23 @@
              </div>
         </footer>
     </div>
+    
+    <!-- *** 關鍵修改：新增 QR Code 彈出視窗的 HTML 結構 *** -->
+    <div id="qrcode-modal" class="modal-overlay">
+        <div class="modal-content text-center">
+            <h3 class="text-lg font-medium leading-6 text-gray-900 mb-4">手機掃描分享</h3>
+            <div id="qrcode-container" class="p-2 border rounded-lg inline-block">
+                <!-- QR Code 圖片會顯示在這裡 -->
+            </div>
+            <p class="text-sm text-gray-500 mt-2">使用手機相機掃描以上 QR Code</p>
+            <div class="mt-6">
+                <button id="close-modal-btn" type="button" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                    關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -172,7 +214,11 @@
                 storage: {
                     bar: document.getElementById('storage-bar'),
                     text: document.getElementById('storage-text')
-                }
+                },
+                // *** 關鍵修改：新增 QR Code 相關元素 ***
+                qrCodeModal: document.getElementById('qrcode-modal'),
+                qrCodeContainer: document.getElementById('qrcode-container'),
+                closeModalBtn: document.getElementById('close-modal-btn')
             };
             let currentTaskId = null;
 
@@ -199,6 +245,16 @@
                 if (currentTaskId) {
                     await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
                 }
+            });
+            
+            // *** 關鍵修改：新增關閉 QR Code 視窗的事件 ***
+            elements.closeModalBtn.addEventListener('click', () => {
+                elements.qrCodeModal.classList.remove('visible');
+            });
+            elements.qrCodeModal.addEventListener('click', (e) => {
+                 if (e.target === elements.qrCodeModal) {
+                    elements.qrCodeModal.classList.remove('visible');
+                 }
             });
 
             // --- 函式 ---
@@ -287,6 +343,13 @@
                         shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200";
                         shareBtn.onclick = (e) => displayShareLink(e, data);
                         elements.resultButtons.appendChild(shareBtn);
+
+                        // *** 關鍵修改：新增顯示 QR Code 按鈕 ***
+                        const qrBtn = document.createElement('button');
+                        qrBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v3A1.5 1.5 0 0111.5 8h-3A1.5 1.5 0 017 6.5v-3zM8.5 3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 3.5A1.5 1.5 0 0116.5 2h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V4h-.25A1.5 1.5 0 0115 3.5zM7 15a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0113 15v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 017 18v-3zM8.5 14a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 15a1.5 1.5 0 011.5-1.5h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V16h-.25A1.5 1.5 0 0115 15zM3.5 7A1.5 1.5 0 012 8.5v3A1.5 1.5 0 013.5 13h3A1.5 1.5 0 018 11.5v-3A1.5 1.5 0 016.5 7h-3zM3 8.5a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM3.5 15A1.5 1.5 0 012 16.5v.25a.75.75 0 01-1.5 0V16a.75.75 0 01.75-.75h.25A1.5 1.5 0 013.5 15zm13.25.75a.75.75 0 00-1.5 0v.25A1.5 1.5 0 0113.5 18h-.25a.75.75 0 000 1.5h.25A2.75 2.75 0 0016 16.75v-.25a.75.75 0 00-.75-.75z"/></svg>顯示 QR Code`;
+                        qrBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200";
+                        qrBtn.onclick = () => showQrCode(data._id);
+                        elements.resultButtons.appendChild(qrBtn);
                     }
                 }
             }
@@ -311,6 +374,18 @@
                 urlContainer.appendChild(copyButton);
                 elements.resultButtons.appendChild(urlContainer);
                 event.target.closest('button').disabled = true;
+            }
+            
+            // *** 關鍵修改：新增顯示 QR Code 的函式 ***
+            function showQrCode(taskId) {
+                elements.qrCodeContainer.innerHTML = ''; // 清空舊的 QR Code
+                const img = document.createElement('img');
+                img.src = `/qrcode/${taskId}`;
+                img.alt = 'Share QR Code';
+                img.width = 250;
+                img.height = 250;
+                elements.qrCodeContainer.appendChild(img);
+                elements.qrCodeModal.classList.add('visible');
             }
 
             function formatBytes(bytes, decimals = 2) {
