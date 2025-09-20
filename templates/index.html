@@ -21,12 +21,11 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .log-box { font-family: 'Courier New', Courier, monospace; }
-        .tab-button { transition: all 0.3s; }
+        .tab-button { transition: all 0.3s; padding: 0.75rem 0.25rem; border-bottom-width: 2px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; white-space: nowrap; border-color: transparent;}
         .tab-button.active { border-color: #3b82f6; color: #3b82f6; }
         .dark .tab-button.active { background-color: #1e3a8a; color: #e0f2fe;}
         .fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* *** 關鍵修改：新增拖曳區塊樣式 *** */
         .drop-zone {
             border: 2px dashed #9ca3af; /* gray-400 */
             transition: all 0.3s;
@@ -73,15 +72,16 @@
             <div id="main-view">
                 <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
                     <nav class="-mb-px flex space-x-6" aria-label="Tabs">
+                        <!-- *** 關鍵修改：重新加入解壓縮分頁 *** -->
                         <button id="tab-compress" class="tab-button active">壓縮</button>
-                        <button id="tab-history" class="tab-button">歷史紀錄</button>
+                        <button id="tab-decompress" class="tab-button text-gray-500 dark:text-gray-400">解壓縮</button>
+                        <button id="tab-history" class="tab-button text-gray-500 dark:text-gray-400">歷史紀錄</button>
                     </nav>
                 </div>
                 
                 <div id="compress-section">
                     <form id="compress-form">
                         <fieldset class="space-y-4">
-                            <!-- *** 關鍵修改：新增拖曳上傳區塊 *** -->
                             <div id="drop-zone" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
                                 <input id="file-compress" name="file" type="file" required class="hidden">
                                 <label for="file-compress" class="cursor-pointer">
@@ -93,7 +93,6 @@
                                     <p id="file-name-display" class="mt-1 text-xs text-gray-500"></p>
                                 </label>
                             </div>
-                            <!-- (其他壓縮設定不變) -->
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                                 <div>
                                     <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">壓縮次數:</label>
@@ -137,11 +136,19 @@
                         <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
                 </div>
-                <!-- *** 關鍵修改：新增歷史紀錄區塊 *** -->
+                <!-- *** 關鍵修改：重新加入解壓縮區塊 *** -->
+                <div id="decompress-section" class="hidden">
+                    <div class="text-center text-gray-600 dark:text-gray-400 p-8 space-y-4">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a1.5 1.5 0 00-3 0v3.75m0 0H10.5m1.5 0H13.5m0 0V10.5m0 0L15 12m-1.5-1.5L10.5 12m3.75 6.75a1.5 1.5 0 01-3 0V15m0 0H10.5m1.5 0H13.5m0 0v1.5m0 0l1.5 1.5m-1.5-1.5l-1.5 1.5M12 21a9 9 0 100-18 9 9 0 000 18z"></path></svg>
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">如何解壓縮？</h3>
+                        <p>本工具的解壓縮功能，是透過「分享連結」來自動完成的。</p>
+                        <p>當您收到一個分享連結時，直接在瀏覽器中打開它，網頁就會引導您完成後續的解壓縮步驟。</p>
+                    </div>
+                </div>
                 <div id="history-section" class="hidden">
                      <div class="flex justify-between items-center mb-4">
                          <h2 class="text-lg font-medium text-gray-900 dark:text-white">本機壓縮歷史</h2>
-                         <button id="clear-history-btn" class="text-sm text-red-500 hover:text-red-700">清除所有紀錄</button>
+                         <button id="clear-history-btn" class="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">清除所有紀錄</button>
                      </div>
                      <div id="history-list" class="space-y-3">
                          <!-- JS will populate this -->
@@ -150,11 +157,28 @@
             </div>
             
             <div id="progress-section" class="hidden fade-in mt-8">
-                 <!-- (進度條區塊不變) -->
+                 <h2 class="text-2xl font-semibold mb-4 border-b pb-2 dark:border-gray-700">處理進度</h2>
+                 <div class="mb-4">
+                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700 dark:text-gray-300">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
+                 </div>
+                 <div class="text-center my-4"><button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-900 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-800">取消操作</button></div>
+                 <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700 dark:text-gray-300">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap dark:bg-black dark:text-gray-300"></div></div>
+                 <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900">
+                    <h3 id="result-title" class="text-lg font-medium text-blue-800 dark:text-blue-300">任務完成！</h3>
+                    <div id="result-buttons" class="mt-4 flex flex-wrap justify-center items-center gap-4"></div>
+                 </div>
             </div>
 
             <div id="share-view-section" class="hidden">
-                 <!-- (分享頁面區塊不變) -->
+                 <h2 class="text-2xl font-semibold mb-2 text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
+                 <p class="text-gray-600 dark:text-gray-400 mb-6" id="share-filename">正在準備檔案...</p>
+                 <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 dark:bg-yellow-900 dark:border-yellow-600">
+                    <label for="share-master-password" class="block text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ 此檔案需要特殊密碼</label>
+                    <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">請向分享者索取，並在此輸入：</p>
+                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
+                 </div>
+                 <div class="text-center"><button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800"><svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd"></path></svg>開始解壓縮並準備下載</button></div>
             </div>
         </main>
         <footer class="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
@@ -172,31 +196,33 @@
     </div>
     
     <div id="qrcode-modal" class="modal-overlay">
-         <!-- (QR Code 彈出視窗不變) -->
+         <div class="modal-content text-center"><h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mb-4">手機掃描分享</h3><div id="qrcode-container" class="p-2 border rounded-lg inline-block bg-white"></div><p class="text-sm text-gray-500 dark:text-gray-400 mt-2">使用手機相機掃描以上 QR Code</p><div class="mt-6"><button id="close-modal-btn" type="button" class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600">關閉</button></div></div>
     </div>
 
-    <!-- *** 關鍵修改：新增刪除確認彈出視窗 *** -->
     <div id="delete-confirm-modal" class="modal-overlay">
-        <div class="modal-content text-center">
-            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path></svg>
-            </div>
-            <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mt-4">永久刪除檔案</h3>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">您確定要刪除這個檔案嗎？<br>此操作無法復原，分享連結將會失效。</p>
-            <div class="mt-6 flex justify-center gap-4">
-                <button id="cancel-delete-btn" class="rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">取消</button>
-                <button id="confirm-delete-btn" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">確認刪除</button>
-            </div>
-        </div>
+        <div class="modal-content text-center"><div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900"><svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"></path></svg></div><h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mt-4">永久刪除檔案</h3><p class="text-sm text-gray-500 dark:text-gray-400 mt-2">您確定要刪除這個檔案嗎？<br>此操作無法復原，分享連結將會失效。</p><div class="mt-6 flex justify-center gap-4"><button id="cancel-delete-btn" class="rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">取消</button><button id="confirm-delete-btn" class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">確認刪除</button></div></div>
     </div>
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const elements = {
-                // ... (其他元素不變)
-                // *** 關鍵修改：新增元素 ***
-                tabs: { compress: document.getElementById('tab-compress'), history: document.getElementById('tab-history') },
-                sections: { compress: document.getElementById('compress-section'), history: document.getElementById('history-section') },
+                mainView: document.getElementById('main-view'),
+                progressSection: document.getElementById('progress-section'),
+                shareView: document.getElementById('share-view-section'),
+                compressForm: document.getElementById('compress-form'),
+                cancelButton: document.getElementById('cancel-button'),
+                logBox: document.getElementById('log-box'),
+                progressBar: document.getElementById('progress-bar'),
+                progressPercentage: document.getElementById('progress-percentage'),
+                progressStatus: document.getElementById('progress-status'),
+                resultSection: document.getElementById('result-section'),
+                resultTitle: document.getElementById('result-title'),
+                resultButtons: document.getElementById('result-buttons'),
+                useMasterPassCheckbox: document.getElementById('use_master_pass'),
+                masterPassInputs: document.getElementById('master-password-inputs'),
+                // *** 關鍵修改：更新元素列表 ***
+                tabs: { compress: document.getElementById('tab-compress'), decompress: document.getElementById('tab-decompress'), history: document.getElementById('tab-history') },
+                sections: { compress: document.getElementById('compress-section'), decompress: document.getElementById('decompress-section'), history: document.getElementById('history-section') },
                 dropZone: document.getElementById('drop-zone'),
                 fileInput: document.getElementById('file-compress'),
                 fileNameDisplay: document.getElementById('file-name-display'),
@@ -205,13 +231,27 @@
                 deleteConfirmModal: document.getElementById('delete-confirm-modal'),
                 cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
                 confirmDeleteBtn: document.getElementById('confirm-delete-btn'),
+                qrCodeModal: document.getElementById('qrcode-modal'),
+                qrCodeContainer: document.getElementById('qrcode-container'),
+                closeModalBtn: document.getElementById('close-modal-btn'),
+                themeToggleBtn: document.getElementById('theme-toggle'),
+                themeToggleDarkIcon: document.getElementById('theme-toggle-dark-icon'),
+                themeToggleLightIcon: document.getElementById('theme-toggle-light-icon'),
+                share: {
+                    filename: document.getElementById('share-filename'),
+                    masterPassPrompt: document.getElementById('share-master-pass-prompt'),
+                    masterPassInput: document.getElementById('share-master-password'),
+                    startBtn: document.getElementById('start-share-decompress-btn')
+                },
+                storage: {
+                    bar: document.getElementById('storage-bar'),
+                    text: document.getElementById('storage-text')
+                }
             };
             let currentTaskId = null;
-            let taskToDelete = null; // 用來儲存待刪除的任務資訊
+            let taskToDelete = null;
 
             // --- 事件監聽 ---
-            
-            // *** 關鍵修改：更新分頁切換邏輯 ***
             Object.keys(elements.tabs).forEach(mode => {
                 elements.tabs[mode].addEventListener('click', () => {
                     Object.keys(elements.tabs).forEach(m => {
@@ -222,18 +262,11 @@
                 });
             });
 
-            // *** 關鍵修改：新增拖曳上傳事件 ***
             const dropZone = elements.dropZone;
             const fileInput = elements.fileInput;
             const fileNameDisplay = elements.fileNameDisplay;
-
-            dropZone.addEventListener('dragover', e => {
-                e.preventDefault();
-                dropZone.classList.add('drag-over');
-            });
-            ['dragleave', 'dragend'].forEach(type => {
-                dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over'));
-            });
+            dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+            ['dragleave', 'dragend'].forEach(type => { dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over')); });
             dropZone.addEventListener('drop', e => {
                 e.preventDefault();
                 dropZone.classList.remove('drag-over');
@@ -242,13 +275,8 @@
                     fileNameDisplay.textContent = fileInput.files[0].name;
                 }
             });
-            fileInput.addEventListener('change', () => {
-                 if (fileInput.files.length > 0) {
-                    fileNameDisplay.textContent = fileInput.files[0].name;
-                }
-            });
+            fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) fileNameDisplay.textContent = fileInput.files[0].name; });
             
-            // *** 關鍵修改：新增歷史紀錄與刪除事件 ***
             elements.clearHistoryBtn.addEventListener('click', () => {
                 localStorage.removeItem('compressHistory');
                 renderHistory();
@@ -261,110 +289,78 @@
                 }
                 elements.deleteConfirmModal.classList.remove('visible');
             });
-
-
-            // --- (其他事件監聽不變) ---
-
-            // --- 函式 ---
             
-            // *** 關鍵修改：新增或修改的函式 ***
-
-            function saveToHistory(taskData) {
-                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                const newEntry = {
-                    id: taskData._id,
-                    name: taskData.params.raw_filename,
-                    date: new Date().toLocaleString(),
-                    finalName: taskData.result_filename,
-                    token: taskData.delete_token
-                };
-                history.unshift(newEntry); // 加到最前面
-                if(history.length > 50) history.pop(); // 最多保存50筆
-                localStorage.setItem('compressHistory', JSON.stringify(history));
-            }
-
-            function renderHistory() {
-                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                elements.historyList.innerHTML = '';
-                if(history.length === 0) {
-                    elements.historyList.innerHTML = `<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>`;
-                    return;
-                }
-                history.forEach(item => {
-                    const entry = document.createElement('div');
-                    entry.className = 'p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between';
-                    entry.innerHTML = `
-                        <div>
-                            <p class="font-medium text-gray-900 dark:text-white">${item.name}</p>
-                            <p class="text-sm text-gray-500 dark:text-gray-400">${item.date}</p>
-                        </div>
-                        <div class="flex gap-2">
-                            <button data-id="${item.id}" class="history-share-btn text-sm text-blue-500 hover:underline">分享</button>
-                            <button data-id="${item.id}" class="history-qr-btn text-sm text-green-500 hover:underline">QR Code</button>
-                            <button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn text-sm text-red-500 hover:underline">刪除</button>
-                        </div>
-                    `;
-                    elements.historyList.appendChild(entry);
-                });
-            }
-
-            // 使用事件委派來處理歷史紀錄中的按鈕點擊
-            elements.historyList.addEventListener('click', (e) => {
-                const target = e.target;
-                const id = target.dataset.id;
-                if (!id) return;
-
-                if (target.classList.contains('history-share-btn')) {
-                    // 這裡只是簡單地複製連結，可以做得更花俏
-                    const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${id}`;
-                    navigator.clipboard.writeText(shareUrl).then(() => {
-                        target.textContent = '已複製!';
-                        setTimeout(() => target.textContent = '分享', 2000);
-                    });
-                } else if (target.classList.contains('history-qr-btn')) {
-                    showQrCode(id);
-                } else if (target.classList.contains('history-delete-btn')) {
-                    const token = target.dataset.token;
-                    promptDeleteFile(id, token);
-                }
+            elements.useMasterPassCheckbox.addEventListener('change', () => elements.masterPassInputs.classList.toggle('hidden', !elements.useMasterPassCheckbox.checked));
+            elements.compressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/compress', new FormData(elements.compressForm)); });
+            elements.cancelButton.addEventListener('click', async () => { if (currentTaskId) await fetch(`/cancel/${currentTaskId}`, { method: 'POST' }); });
+            elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
+            elements.qrCodeModal.addEventListener('click', (e) => { if (e.target === elements.qrCodeModal) elements.qrCodeModal.classList.remove('visible'); });
+            elements.themeToggleBtn.addEventListener('click', function() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('color-theme', isDark ? 'dark' : 'light');
+                updateThemeIcons(isDark);
             });
 
-            function promptDeleteFile(taskId, token) {
-                taskToDelete = { id: taskId, token: token };
-                elements.deleteConfirmModal.classList.add('visible');
+            // --- 函式 ---
+            function startTask(endpoint, body) {
+                elements.mainView.classList.add('hidden');
+                elements.shareView.classList.add('hidden');
+                elements.progressSection.classList.remove('hidden');
+                elements.resultSection.classList.add('hidden');
+                elements.cancelButton.classList.remove('hidden');
+                elements.logBox.innerHTML = '';
+                elements.progressBar.style.width = '0%';
+                elements.progressPercentage.textContent = '0%';
+                elements.progressStatus.textContent = '處理中...';
+
+                const fetchOptions = { method: 'POST', body: body };
+                if (typeof body === 'string') {
+                    fetchOptions.headers = { 'Content-Type': 'application/json' };
+                }
+
+                fetch(endpoint, fetchOptions)
+                    .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
+                    .then(data => {
+                        if (data.task_id) { currentTaskId = data.task_id; checkStatus(currentTaskId); } 
+                        else { throw new Error('無法取得任務 ID'); }
+                    })
+                    .catch(error => {
+                        elements.logBox.innerHTML = `錯誤: ${error.error || error.message}`;
+                        elements.progressStatus.textContent = '失敗';
+                        elements.cancelButton.classList.add('hidden');
+                    });
             }
 
-            async function deleteFileFromServer(taskId, token) {
+            async function checkStatus(taskId) {
                 try {
-                    const response = await fetch(`/delete/${taskId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token })
-                    });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error);
+                    const response = await fetch(`/status/${taskId}`);
+                    if (!response.ok) return;
+                    const data = await response.json();
                     
-                    // 從歷史紀錄中移除
-                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
-                    history = history.filter(item => item.id !== taskId);
-                    localStorage.setItem('compressHistory', JSON.stringify(history));
-                    renderHistory();
-                    updateStorageStats(); // 更新空間
+                    elements.progressBar.style.width = `${data.progress || 0}%`;
+                    elements.progressPercentage.textContent = `${data.progress || 0}%`;
+                    elements.logBox.innerHTML = (data.logs || []).join('\n');
+                    elements.logBox.scrollTop = elements.logBox.scrollHeight;
 
-                } catch (error) {
-                    alert(`刪除失敗: ${error.message}`);
-                }
+                    const finalStates = ['完成', '失敗', '已取消'];
+                    if (finalStates.includes(data.status)) {
+                        elements.progressStatus.textContent = data.status;
+                        elements.resultTitle.textContent = `任務${data.status}！`;
+                        elements.resultSection.classList.remove('hidden');
+                        if(data.status === '完成') displayResults(data);
+                        elements.cancelButton.classList.add('hidden');
+                        currentTaskId = null;
+                    } else {
+                        setTimeout(() => checkStatus(taskId), 2000);
+                    }
+                } catch (error) { elements.logBox.innerHTML += `\n檢查狀態時發生錯誤。`; }
             }
             
-            // --- (其他函式不變，但 displayResults 有修改) ---
             function displayResults(data) {
                 elements.resultButtons.innerHTML = '';
                 const isCompress = data.type === 'compress';
                 
-                if (isCompress) {
-                    saveToHistory(data);
-                }
-                
+                if (isCompress) saveToHistory(data);
                 if (!isCompress && data.result_file_id) {
                     elements.logBox.innerHTML += '\n\n日誌: 正在自動為您下載檔案...';
                     window.location.href = `/download/${data._id}`;
@@ -380,7 +376,6 @@
                     updateStorageStats();
                     elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900';
                     elements.resultTitle.className = 'text-lg font-medium text-blue-800 dark:text-blue-300';
-                    
                     if (data.password_file_content) {
                         const shareBtn = document.createElement('button');
                         shareBtn.innerHTML = `產生分享連結`;
@@ -394,7 +389,6 @@
                         qrBtn.onclick = () => showQrCode(data._id);
                         elements.resultButtons.appendChild(qrBtn);
                         
-                        // *** 關鍵修改：新增刪除按鈕 ***
                         const deleteBtn = document.createElement('button');
                         deleteBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.58.22-2.365.468a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" /></svg>永久刪除此檔案`;
                         deleteBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800";
@@ -404,11 +398,90 @@
                 }
             }
             
-            // ... (其他函式不變)
+            function displayShareLink(event, data) {
+                const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${data._id}`;
+                const urlContainer = document.createElement('div');
+                urlContainer.className = 'mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700';
+                const urlInput = document.createElement('input');
+                urlInput.type = 'text'; urlInput.value = shareUrl; urlInput.readOnly = true;
+                urlInput.className = 'flex-grow bg-transparent border-none text-sm p-1';
+                const copyButton = document.createElement('button');
+                copyButton.textContent = '複製';
+                copyButton.className = 'text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500';
+                copyButton.onclick = () => {
+                    urlInput.select();
+                    document.execCommand('copy');
+                    copyButton.textContent = '已複製!';
+                    setTimeout(() => { copyButton.textContent = '複製'; }, 2000);
+                };
+                urlContainer.appendChild(urlInput);
+                urlContainer.appendChild(copyButton);
+                elements.resultButtons.appendChild(urlContainer);
+                event.target.closest('button').disabled = true;
+            }
+            
+            function showQrCode(taskId) {
+                elements.qrCodeContainer.innerHTML = '';
+                const img = document.createElement('img');
+                img.src = `/qrcode/${taskId}`;
+                img.alt = 'Share QR Code';
+                img.width = 250; img.height = 250;
+                elements.qrCodeContainer.appendChild(img);
+                elements.qrCodeModal.classList.add('visible');
+            }
+
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024; const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+
+            async function updateStorageStats() {
+                try {
+                    const response = await fetch('/storage-stats');
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const used = data.used_space; const total = data.total_space;
+                    const percentage = total > 0 ? (used / total) * 100 : 0;
+                    elements.storage.bar.style.width = `${percentage}%`;
+                    elements.storage.text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
+                    if (percentage > 90) elements.storage.bar.className = 'bg-red-500 h-2 rounded-full';
+                    else if (percentage > 70) elements.storage.bar.className = 'bg-yellow-500 h-2 rounded-full';
+                    else elements.storage.bar.className = 'bg-indigo-500 h-2 rounded-full';
+                } catch (error) { elements.storage.text.textContent = '無法取得資訊'; }
+            }
+            
+            async function showShareView(shareId) {
+                elements.mainView.classList.add('hidden');
+                elements.shareView.classList.remove('hidden');
+                try {
+                    const response = await fetch(`/status/${shareId}`);
+                    if (!response.ok) throw new Error('找不到分享的檔案或連結已過期。');
+                    const data = await response.json();
+                    if (data.type !== 'compress' || !data.result_filename) throw new Error('此連結不是一個有效的分享連結。');
+                    elements.share.filename.textContent = `準備解壓縮檔案: ${data.result_filename}`;
+                    const needsMasterPass = data.password_file_content && data.password_file_content.includes('(特殊密碼層)');
+                    if (needsMasterPass) elements.share.masterPassPrompt.classList.remove('hidden');
+                    elements.share.startBtn.onclick = () => {
+                        const body = JSON.stringify({
+                            master_password: needsMasterPass ? elements.share.masterPassInput.value : null
+                        });
+                        startTask(`/start-shared-decompression/${shareId}`, body);
+                    };
+                } catch (error) {
+                    elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${error.message}</div>`;
+                }
+            }
+            
+            function updateThemeIcons(isDark) {
+                elements.themeToggleDarkIcon.classList.toggle('hidden', !isDark);
+                elements.themeToggleLightIcon.classList.toggle('hidden', isDark);
+            }
 
             // --- 初始執行 ---
             updateThemeIcons(document.documentElement.classList.contains('dark'));
-
             const shareId = new URLSearchParams(window.location.search).get('share_id');
             if (shareId) {
                 showShareView(shareId);
