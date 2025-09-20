@@ -21,7 +21,7 @@ from gridfs import GridFS
 from urllib.parse import quote
 import qrcode
 import io
-import secrets # *** 關鍵修改：引入 secrets 來產生安全的 token ***
+import secrets
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -130,7 +130,6 @@ def compression_worker(task_id_str):
         
         os.remove(current_file)
 
-        # *** 關鍵修改：新增自毀 token ***
         delete_token = secrets.token_hex(16)
 
         tasks_collection.update_one({'_id': task_id}, {'$set': { 
@@ -139,7 +138,7 @@ def compression_worker(task_id_str):
             'result_file_id': str(file_id),
             'result_filename': final_filename, 
             'password_file_content': password_file_content,
-            'delete_token': delete_token # 儲存 token
+            'delete_token': delete_token
         }})
     except Exception as e:
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
@@ -256,6 +255,46 @@ def compress_route():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+# *** 關鍵修改：新增手動解壓縮路由 ***
+@app.route('/decompress-manual', methods=['POST'])
+def decompress_manual_route():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
+
+    file = request.files['file']
+    filename = secure_filename(file.filename)
+    password_text = request.form.get('passwords', '')
+    master_pass = request.form.get('master_password')
+
+    try:
+        if not password_text:
+            raise ValueError("請貼上密碼表內容。")
+
+        password_list = parse_password_text(password_text)
+        if not password_list:
+            raise ValueError("無法解析您提供的密碼表，請檢查格式是否正確。")
+
+        params = {
+            'password_list': password_list,
+            'master_pass': master_pass
+        }
+        
+        task = {'type': 'decompress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+        task_id = tasks_collection.insert_one(task).inserted_id
+        
+        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{filename}")
+        file.save(filepath)
+        
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
+        threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
+        return jsonify({'task_id': str(task_id)})
+
+    except Exception as e:
+        if 'task_id' in locals():
+            tasks_collection.delete_one({'_id': task_id})
+        return jsonify({'error': str(e)}), 400
+
+
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
 def start_shared_decompression(compress_task_id):
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
@@ -311,7 +350,6 @@ def task_status(task_id):
         task['_id'] = str(task['_id']); return jsonify(task)
     return jsonify({'error': '找不到任務'}), 404
 
-# *** 關鍵修改：新增檔案刪除路由 ***
 @app.route('/delete/<task_id>', methods=['POST'])
 def delete_file(task_id):
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
@@ -332,13 +370,10 @@ def delete_file(task_id):
             file_id = ObjectId(task['result_file_id'])
             fs.delete(file_id)
         
-        # 移除相關欄位，讓分享連結失效
         tasks_collection.update_one({'_id': ObjectId(task_id)}, {
             '$unset': {
-                'result_file_id': "",
-                'result_filename': "",
-                'password_file_content': "",
-                'delete_token': ""
+                'result_file_id': "", 'result_filename': "",
+                'password_file_content': "", 'delete_token': ""
             },
             '$set': {'status': '已刪除'}
         })
