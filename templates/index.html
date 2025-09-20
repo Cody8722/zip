@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" class=""> <!-- 初始 class 為空，由 JS 控制 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,14 +9,15 @@
         body { font-family: 'Inter', sans-serif; }
         .log-box { font-family: 'Courier New', Courier, monospace; }
         .tab-button { transition: all 0.3s; }
-        .tab-button.active { border-color: #3b82f6; color: #3b82f6; background-color: #eff6ff; }
+        .tab-button.active { border-color: #3b82f6; color: #3b82f6; }
+        .dark .tab-button.active { background-color: #1e3a8a; color: #e0f2fe;}
         .fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         input:disabled, fieldset:disabled input, fieldset:disabled select {
             background-color: #f3f4f6;
             cursor: not-allowed;
         }
-        /* *** 關鍵修改：新增 QR Code 彈出視窗樣式 *** */
+        .dark input:disabled { background-color: #374151; }
         .modal-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             background-color: rgba(0, 0, 0, 0.6);
@@ -38,27 +39,36 @@
             transform: scale(0.95);
             transition: transform 0.3s ease;
         }
+        .dark .modal-content {
+            background-color: #1f2937; /* gray-800 */
+        }
         .modal-overlay.visible .modal-content {
             transform: scale(1);
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300 transition-colors duration-300">
 
     <div class="container mx-auto p-4 md:p-8 max-w-4xl">
-        <header class="text-center mb-8">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">多功能線上壓縮工具</h1>
-            <p class="text-gray-600 mt-2">安全地對您的檔案進行多層壓縮與解壓縮。</p>
+        <header class="text-center mb-8 relative">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">多功能線上壓縮工具</h1>
+            <p class="text-gray-600 dark:text-gray-400 mt-2">安全地對您的檔案進行多層壓縮與解壓縮。</p>
+            
+            <!-- *** 關鍵修改：新增深夜模式切換按鈕 *** -->
+            <button id="theme-toggle" type="button" class="absolute top-0 right-0 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-700 rounded-lg text-sm p-2.5">
+                <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.464A1 1 0 106.465 13.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 11a1 1 0 100-2H4a1 1 0 100 2h1zM4.54 5.46A1 1 0 015.95 6.874l-.707.707a1 1 0 11-1.414-1.414l.707-.707z"></path></svg>
+            </button>
         </header>
 
-        <main class="bg-white rounded-lg shadow-lg p-6 md:p-8">
+        <main class="bg-white rounded-lg shadow-lg p-6 md:p-8 dark:bg-gray-800">
             <!-- 主要操作介面 (預設顯示) -->
             <div id="main-view">
                 <!-- 功能分頁 -->
-                <div class="mb-6 border-b border-gray-200">
+                <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
                     <nav class="-mb-px flex space-x-6" aria-label="Tabs">
                         <button id="tab-compress" class="tab-button active whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">壓縮</button>
-                        <button id="tab-decompress" class="tab-button text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">解壓縮</button>
+                        <button id="tab-decompress" class="tab-button text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-300 dark:hover:border-gray-500 whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm">解壓縮</button>
                     </nav>
                 </div>
 
@@ -67,118 +77,117 @@
                     <form id="compress-form">
                         <fieldset class="space-y-4">
                             <div class="mb-4">
-                                <label for="file-compress" class="block text-sm font-medium text-gray-700 mb-2">1. 選擇檔案:</label>
-                                <input id="file-compress" name="file" type="file" required class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                <label for="file-compress" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">1. 選擇檔案:</label>
+                                <input id="file-compress" name="file" type="file" required class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-blue-900 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 dark:hover:file:bg-blue-800">
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                                 <div>
-                                    <label for="iterations" class="block text-sm font-medium text-gray-700">2. 壓縮次數:</label>
-                                    <input type="number" id="iterations" name="iterations" value="5" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">2. 壓縮次數:</label>
+                                    <input type="number" id="iterations" name="iterations" value="5" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                                 <div>
-                                    <label for="formats" class="block text-sm font-medium text-gray-700">3. 格式順序:</label>
-                                    <input type="text" id="formats" name="formats" value="zip,7z,targz" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <label for="formats" class="block text-sm font-medium text-gray-700 dark:text-gray-300">3. 格式順序:</label>
+                                    <input type="text" id="formats" name="formats" value="zip,7z,targz" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">4. 一般加密規則:</label>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">4. 一般加密規則:</label>
                                 <div class="space-y-2">
-                                    <div class="flex items-center"><input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"><label for="encrypt-odd" class="ml-3 block text-sm text-gray-900">加密所有奇數層 (1, 3, 5...)</label></div>
-                                    <div class="flex items-center"><input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"><label for="encrypt-manual" class="ml-3 block text-sm text-gray-900">手動指定層數:</label><input type="text" id="manual_layers" name="manual_layers" placeholder="例如: 2,4" class="ml-2 block w-full md:w-auto rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"></div>
+                                    <div class="flex items-center"><input id="encrypt-odd" name="encrypt_mode" type="radio" value="odd" checked class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"><label for="encrypt-odd" class="ml-3 block text-sm text-gray-900 dark:text-gray-300">加密所有奇數層 (1, 3, 5...)</label></div>
+                                    <div class="flex items-center"><input id="encrypt-manual" name="encrypt_mode" type="radio" value="manual" class="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600"><label for="encrypt-manual" class="ml-3 block text-sm text-gray-900 dark:text-gray-300">手動指定層數:</label><input type="text" id="manual_layers" name="manual_layers" placeholder="例如: 2,4" class="ml-2 block w-full md:w-auto rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"></div>
                                 </div>
                             </div>
                         </fieldset>
 
-                        <fieldset id="master-password-fieldset" class="mt-6 border-t pt-4 space-y-4">
-                            <legend class="text-sm font-medium text-gray-700">5. 特殊加密設定 (選填)</legend>
+                        <fieldset id="master-password-fieldset" class="mt-6 border-t pt-4 space-y-4 dark:border-gray-700">
+                            <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">5. 特殊加密設定 (選填)</legend>
                             <div class="flex items-start">
                                  <div class="flex items-center h-5">
-                                    <input id="use_master_pass" name="use_master_pass" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                    <input id="use_master_pass" name="use_master_pass" type="checkbox" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600">
                                 </div>
                                 <div class="ml-3 text-sm">
-                                    <label for="use_master_pass" class="font-medium text-gray-800">啟用特殊密碼</label>
-                                    <p class="text-gray-500">在固定間隔使用您指定的密碼進行加密。</p>
+                                    <label for="use_master_pass" class="font-medium text-gray-800 dark:text-gray-200">啟用特殊密碼</label>
+                                    <p class="text-gray-500 dark:text-gray-400">在固定間隔使用您指定的密碼進行加密。</p>
                                 </div>
                             </div>
                             <div id="master-password-inputs" class="space-y-4 hidden">
                                  <div>
-                                    <label for="master_password" class="block text-sm font-medium text-gray-700">您的特殊密碼:</label>
-                                    <input type="password" id="master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <label for="master_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">您的特殊密碼:</label>
+                                    <input type="password" id="master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                                 <div>
-                                    <label for="master_password_interval" class="block text-sm font-medium text-gray-700">間隔層數 (每 N 層使用一次):</label>
-                                    <input type="number" id="master_password_interval" name="master_password_interval" value="10" min="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <label for="master_password_interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">間隔層數 (每 N 層使用一次):</label>
+                                    <input type="number" id="master_password_interval" name="master_password_interval" value="10" min="2" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                 </div>
                             </div>
                         </fieldset>
 
-                        <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">開始壓縮</button></div>
+                        <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
                 </div>
                 
                 <div id="decompress-section" class="hidden">
-                    <p class="text-center text-gray-600 p-8">請使用分享連結來進行解壓縮。</p>
+                    <p class="text-center text-gray-600 dark:text-gray-400 p-8">請使用分享連結來進行解壓縮。</p>
                 </div>
             </div>
             
             <div id="progress-section" class="hidden fade-in mt-8">
-                <h2 class="text-2xl font-semibold mb-4 border-b pb-2">處理進度</h2>
+                <h2 class="text-2xl font-semibold mb-4 border-b pb-2 dark:border-gray-700">處理進度</h2>
                 <div class="mb-4">
-                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700">0%</span></div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
+                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700 dark:text-gray-300">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700"><div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div></div>
                 </div>
                 <div class="text-center my-4">
-                    <button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200">取消操作</button>
+                    <button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-900 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-800">取消操作</button>
                 </div>
-                <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap"></div></div>
-                <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center">
-                    <h3 id="result-title" class="text-lg font-medium text-blue-800">任務完成！</h3>
+                <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700 dark:text-gray-300">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap dark:bg-black dark:text-gray-300"></div></div>
+                <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900">
+                    <h3 id="result-title" class="text-lg font-medium text-blue-800 dark:text-blue-300">任務完成！</h3>
                     <div id="result-buttons" class="mt-4 flex flex-col md:flex-row justify-center items-center gap-4"></div>
                 </div>
             </div>
 
             <div id="share-view-section" class="hidden">
-                <h2 class="text-2xl font-semibold mb-2 text-gray-900">一鍵解壓縮分享</h2>
-                <p class="text-gray-600 mb-6" id="share-filename">正在準備檔案...</p>
+                <h2 class="text-2xl font-semibold mb-2 text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
+                <p class="text-gray-600 dark:text-gray-400 mb-6" id="share-filename">正在準備檔案...</p>
                 
-                <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400">
-                    <label for="share-master-password" class="block text-sm font-medium text-yellow-800">⚠️ 此檔案需要特殊密碼</label>
-                    <p class="text-sm text-yellow-700 mt-1">請向分享者索取，並在此輸入：</p>
-                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
+                <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 dark:bg-yellow-900 dark:border-yellow-600">
+                    <label for="share-master-password" class="block text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ 此檔案需要特殊密碼</label>
+                    <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">請向分享者索取，並在此輸入：</p>
+                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
                 </div>
                 
                 <div class="text-center">
-                    <button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                    <button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800">
                         <svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd" /></svg>
                         開始解壓縮並準備下載
                     </button>
                 </div>
             </div>
         </main>
-        <footer class="text-center mt-8 text-sm text-gray-500">
+        <footer class="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
              <p>所有檔案將永久儲存於 MongoDB 資料庫中。</p>
              <div id="storage-stats-container" class="max-w-xs mx-auto mt-4">
-                 <div class="flex justify-between text-xs font-medium text-gray-600">
+                 <div class="flex justify-between text-xs font-medium text-gray-600 dark:text-gray-400">
                     <span class="font-bold">資料庫儲存空間 (免費額度: 512MB)</span>
                     <span id="storage-text">正在計算...</span>
                  </div>
-                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                 <div class="w-full bg-gray-200 rounded-full h-2 mt-1 dark:bg-gray-700">
                      <div id="storage-bar" class="bg-indigo-500 h-2 rounded-full" style="width: 0%"></div>
                  </div>
              </div>
         </footer>
     </div>
     
-    <!-- *** 關鍵修改：新增 QR Code 彈出視窗的 HTML 結構 *** -->
     <div id="qrcode-modal" class="modal-overlay">
         <div class="modal-content text-center">
-            <h3 class="text-lg font-medium leading-6 text-gray-900 mb-4">手機掃描分享</h3>
-            <div id="qrcode-container" class="p-2 border rounded-lg inline-block">
+            <h3 class="text-lg font-medium leading-6 text-gray-900 dark:text-white mb-4">手機掃描分享</h3>
+            <div id="qrcode-container" class="p-2 border rounded-lg inline-block bg-white">
                 <!-- QR Code 圖片會顯示在這裡 -->
             </div>
-            <p class="text-sm text-gray-500 mt-2">使用手機相機掃描以上 QR Code</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">使用手機相機掃描以上 QR Code</p>
             <div class="mt-6">
-                <button id="close-modal-btn" type="button" class="inline-flex justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                <button id="close-modal-btn" type="button" class="inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-700 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600">
                     關閉
                 </button>
             </div>
@@ -215,10 +224,13 @@
                     bar: document.getElementById('storage-bar'),
                     text: document.getElementById('storage-text')
                 },
-                // *** 關鍵修改：新增 QR Code 相關元素 ***
                 qrCodeModal: document.getElementById('qrcode-modal'),
                 qrCodeContainer: document.getElementById('qrcode-container'),
-                closeModalBtn: document.getElementById('close-modal-btn')
+                closeModalBtn: document.getElementById('close-modal-btn'),
+                // *** 關鍵修改：新增深夜模式相關元素 ***
+                themeToggleBtn: document.getElementById('theme-toggle'),
+                themeToggleDarkIcon: document.getElementById('theme-toggle-dark-icon'),
+                themeToggleLightIcon: document.getElementById('theme-toggle-light-icon'),
             };
             let currentTaskId = null;
 
@@ -242,20 +254,21 @@
             });
             
             elements.cancelButton.addEventListener('click', async () => {
-                if (currentTaskId) {
-                    await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
-                }
+                if (currentTaskId) await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
             });
             
-            // *** 關鍵修改：新增關閉 QR Code 視窗的事件 ***
-            elements.closeModalBtn.addEventListener('click', () => {
-                elements.qrCodeModal.classList.remove('visible');
-            });
+            elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
             elements.qrCodeModal.addEventListener('click', (e) => {
-                 if (e.target === elements.qrCodeModal) {
-                    elements.qrCodeModal.classList.remove('visible');
-                 }
+                 if (e.target === elements.qrCodeModal) elements.qrCodeModal.classList.remove('visible');
             });
+            
+            // *** 關鍵修改：新增深夜模式切換事件 ***
+            elements.themeToggleBtn.addEventListener('click', function() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('color-theme', isDark ? 'dark' : 'light');
+                updateThemeIcons(isDark);
+            });
+
 
             // --- 函式 ---
             function startTask(endpoint, body) {
@@ -335,19 +348,18 @@
 
                 if (isCompress) {
                     updateStorageStats();
-                    elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center';
-                    elements.resultTitle.className = 'text-lg font-medium text-blue-800';
+                    elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900';
+                    elements.resultTitle.className = 'text-lg font-medium text-blue-800 dark:text-blue-300';
                     if (data.password_file_content) {
                         const shareBtn = document.createElement('button');
                         shareBtn.innerHTML = `產生分享連結`;
-                        shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200";
+                        shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200 dark:text-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800";
                         shareBtn.onclick = (e) => displayShareLink(e, data);
                         elements.resultButtons.appendChild(shareBtn);
-
-                        // *** 關鍵修改：新增顯示 QR Code 按鈕 ***
+                        
                         const qrBtn = document.createElement('button');
                         qrBtn.innerHTML = `<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v3A1.5 1.5 0 0111.5 8h-3A1.5 1.5 0 017 6.5v-3zM8.5 3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 3.5A1.5 1.5 0 0116.5 2h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V4h-.25A1.5 1.5 0 0115 3.5zM7 15a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0113 15v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 017 18v-3zM8.5 14a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 15a1.5 1.5 0 011.5-1.5h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V16h-.25A1.5 1.5 0 0115 15zM3.5 7A1.5 1.5 0 012 8.5v3A1.5 1.5 0 013.5 13h3A1.5 1.5 0 018 11.5v-3A1.5 1.5 0 016.5 7h-3zM3 8.5a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM3.5 15A1.5 1.5 0 012 16.5v.25a.75.75 0 01-1.5 0V16a.75.75 0 01.75-.75h.25A1.5 1.5 0 013.5 15zm13.25.75a.75.75 0 00-1.5 0v.25A1.5 1.5 0 0113.5 18h-.25a.75.75 0 000 1.5h.25A2.75 2.75 0 0016 16.75v-.25a.75.75 0 00-.75-.75z"/></svg>顯示 QR Code`;
-                        qrBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200";
+                        qrBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500";
                         qrBtn.onclick = () => showQrCode(data._id);
                         elements.resultButtons.appendChild(qrBtn);
                     }
@@ -357,13 +369,13 @@
             function displayShareLink(event, data) {
                 const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${data._id}`;
                 const urlContainer = document.createElement('div');
-                urlContainer.className = 'mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full';
+                urlContainer.className = 'mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700';
                 const urlInput = document.createElement('input');
                 urlInput.type = 'text'; urlInput.value = shareUrl; urlInput.readOnly = true;
                 urlInput.className = 'flex-grow bg-transparent border-none text-sm p-1';
                 const copyButton = document.createElement('button');
                 copyButton.textContent = '複製';
-                copyButton.className = 'text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md';
+                copyButton.className = 'text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500';
                 copyButton.onclick = () => {
                     urlInput.select();
                     document.execCommand('copy');
@@ -376,7 +388,6 @@
                 event.target.closest('button').disabled = true;
             }
             
-            // *** 關鍵修改：新增顯示 QR Code 的函式 ***
             function showQrCode(taskId) {
                 elements.qrCodeContainer.innerHTML = ''; // 清空舊的 QR Code
                 const img = document.createElement('img');
@@ -435,11 +446,25 @@
                         startTask(`/start-shared-decompression/${shareId}`, body);
                     };
                 } catch (error) {
-                    elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center">${error.message}</div>`;
+                    elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${error.message}</div>`;
                 }
             }
             
+            // *** 關鍵修改：新增深夜模式初始化邏輯 ***
+            function updateThemeIcons(isDark) {
+                elements.themeToggleDarkIcon.classList.toggle('hidden', !isDark);
+                elements.themeToggleLightIcon.classList.toggle('hidden', isDark);
+            }
+
             // --- 初始執行 ---
+            if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+                updateThemeIcons(true);
+            } else {
+                document.documentElement.classList.remove('dark');
+                updateThemeIcons(false);
+            }
+
             const shareId = new URLSearchParams(window.location.search).get('share_id');
             if (shareId) {
                 showShareView(shareId);
