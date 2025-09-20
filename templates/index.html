@@ -27,13 +27,13 @@
         .fade-in { animation: fadeIn 0.5s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .drop-zone {
-            border: 2px dashed #9ca3af; /* gray-400 */
+            border: 2px dashed #9ca3af;
             transition: all 0.3s;
         }
-        .dark .drop-zone { border-color: #4b5563; /* gray-600 */ }
+        .dark .drop-zone { border-color: #4b5563; }
         .drop-zone.drag-over {
-            border-color: #3b82f6; /* blue-500 */
-            background-color: #eff6ff; /* blue-50 */
+            border-color: #3b82f6;
+            background-color: #eff6ff;
         }
         .dark .drop-zone.drag-over { background-color: #1e3a8a; }
         
@@ -72,7 +72,6 @@
             <div id="main-view">
                 <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
                     <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                        <!-- *** 關鍵修改：重新加入解壓縮分頁 *** -->
                         <button id="tab-compress" class="tab-button active">壓縮</button>
                         <button id="tab-decompress" class="tab-button text-gray-500 dark:text-gray-400">解壓縮</button>
                         <button id="tab-history" class="tab-button text-gray-500 dark:text-gray-400">歷史紀錄</button>
@@ -82,7 +81,7 @@
                 <div id="compress-section">
                     <form id="compress-form">
                         <fieldset class="space-y-4">
-                            <div id="drop-zone" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
+                            <div id="drop-zone-compress" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
                                 <input id="file-compress" name="file" type="file" required class="hidden">
                                 <label for="file-compress" class="cursor-pointer">
                                     <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -90,7 +89,7 @@
                                         <span class="font-medium text-blue-600 dark:text-blue-400">點擊此處上傳檔案</span>
                                         或將檔案拖曳至此
                                     </p>
-                                    <p id="file-name-display" class="mt-1 text-xs text-gray-500"></p>
+                                    <p id="file-name-display-compress" class="mt-1 text-xs text-gray-500"></p>
                                 </label>
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
@@ -136,14 +135,32 @@
                         <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
                 </div>
-                <!-- *** 關鍵修改：重新加入解壓縮區塊 *** -->
+                <!-- *** 關鍵修改：新增手動解壓縮介面 *** -->
                 <div id="decompress-section" class="hidden">
-                    <div class="text-center text-gray-600 dark:text-gray-400 p-8 space-y-4">
-                        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a1.5 1.5 0 00-3 0v3.75m0 0H10.5m1.5 0H13.5m0 0V10.5m0 0L15 12m-1.5-1.5L10.5 12m3.75 6.75a1.5 1.5 0 01-3 0V15m0 0H10.5m1.5 0H13.5m0 0v1.5m0 0l1.5 1.5m-1.5-1.5l-1.5 1.5M12 21a9 9 0 100-18 9 9 0 000 18z"></path></svg>
-                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">如何解壓縮？</h3>
-                        <p>本工具的解壓縮功能，是透過「分享連結」來自動完成的。</p>
-                        <p>當您收到一個分享連結時，直接在瀏覽器中打開它，網頁就會引導您完成後續的解壓縮步驟。</p>
-                    </div>
+                    <form id="decompress-form">
+                        <fieldset class="space-y-4">
+                            <div id="drop-zone-decompress" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
+                                <input id="file-decompress" name="file" type="file" required class="hidden">
+                                <label for="file-decompress" class="cursor-pointer">
+                                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                        <span class="font-medium text-blue-600 dark:text-blue-400">點擊選擇要解壓縮的檔案</span>
+                                        或將檔案拖曳至此
+                                    </p>
+                                    <p id="file-name-display-decompress" class="mt-1 text-xs text-gray-500"></p>
+                                </label>
+                            </div>
+                            <div>
+                               <label for="passwords" class="block text-sm font-medium text-gray-700 dark:text-gray-300">密碼表:</label>
+                               <textarea id="passwords" name="passwords" rows="4" required class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="請將 passwords.txt 的內容完整貼於此處..."></textarea>
+                            </div>
+                            <div>
+                               <label for="decompress_master_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">特殊密碼 (選填):</label>
+                               <input type="password" id="decompress_master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="若檔案需要特殊密碼，請在此輸入">
+                            </div>
+                        </fieldset>
+                        <div class="mt-6 text-center"><button type="submit" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 dark:focus:ring-green-800">開始解壓縮</button></div>
+                    </form>
                 </div>
                 <div id="history-section" class="hidden">
                      <div class="flex justify-between items-center mb-4">
@@ -210,6 +227,7 @@
                 progressSection: document.getElementById('progress-section'),
                 shareView: document.getElementById('share-view-section'),
                 compressForm: document.getElementById('compress-form'),
+                decompressForm: document.getElementById('decompress-form'), // *** 新增 ***
                 cancelButton: document.getElementById('cancel-button'),
                 logBox: document.getElementById('log-box'),
                 progressBar: document.getElementById('progress-bar'),
@@ -220,12 +238,14 @@
                 resultButtons: document.getElementById('result-buttons'),
                 useMasterPassCheckbox: document.getElementById('use_master_pass'),
                 masterPassInputs: document.getElementById('master-password-inputs'),
-                // *** 關鍵修改：更新元素列表 ***
                 tabs: { compress: document.getElementById('tab-compress'), decompress: document.getElementById('tab-decompress'), history: document.getElementById('tab-history') },
                 sections: { compress: document.getElementById('compress-section'), decompress: document.getElementById('decompress-section'), history: document.getElementById('history-section') },
-                dropZone: document.getElementById('drop-zone'),
-                fileInput: document.getElementById('file-compress'),
-                fileNameDisplay: document.getElementById('file-name-display'),
+                dropZoneCompress: document.getElementById('drop-zone-compress'), // *** 修改 ***
+                fileInputCompress: document.getElementById('file-compress'), // *** 修改 ***
+                fileNameDisplayCompress: document.getElementById('file-name-display-compress'), // *** 修改 ***
+                dropZoneDecompress: document.getElementById('drop-zone-decompress'), // *** 新增 ***
+                fileInputDecompress: document.getElementById('file-decompress'), // *** 新增 ***
+                fileNameDisplayDecompress: document.getElementById('file-name-display-decompress'), // *** 新增 ***
                 historyList: document.getElementById('history-list'),
                 clearHistoryBtn: document.getElementById('clear-history-btn'),
                 deleteConfirmModal: document.getElementById('delete-confirm-modal'),
@@ -262,36 +282,36 @@
                 });
             });
 
-            const dropZone = elements.dropZone;
-            const fileInput = elements.fileInput;
-            const fileNameDisplay = elements.fileNameDisplay;
-            dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-            ['dragleave', 'dragend'].forEach(type => { dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over')); });
-            dropZone.addEventListener('drop', e => {
-                e.preventDefault();
-                dropZone.classList.remove('drag-over');
-                if (e.dataTransfer.files.length) {
-                    fileInput.files = e.dataTransfer.files;
-                    fileNameDisplay.textContent = fileInput.files[0].name;
-                }
-            });
-            fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) fileNameDisplay.textContent = fileInput.files[0].name; });
+            // *** 關鍵修改：將拖曳事件抽象化成一個函式 ***
+            function setupDropZone(dropZone, fileInput, fileNameDisplay) {
+                dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+                ['dragleave', 'dragend'].forEach(type => { dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over')); });
+                dropZone.addEventListener('drop', e => {
+                    e.preventDefault();
+                    dropZone.classList.remove('drag-over');
+                    if (e.dataTransfer.files.length) {
+                        fileInput.files = e.dataTransfer.files;
+                        fileNameDisplay.textContent = fileInput.files[0].name;
+                    }
+                });
+                fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) fileNameDisplay.textContent = fileInput.files[0].name; });
+            }
             
-            elements.clearHistoryBtn.addEventListener('click', () => {
-                localStorage.removeItem('compressHistory');
-                renderHistory();
-            });
+            setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress);
+            setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress);
+            
+            elements.clearHistoryBtn.addEventListener('click', () => { localStorage.removeItem('compressHistory'); renderHistory(); });
             elements.cancelDeleteBtn.addEventListener('click', () => elements.deleteConfirmModal.classList.remove('visible'));
             elements.confirmDeleteBtn.addEventListener('click', () => {
-                if (taskToDelete) {
-                    deleteFileFromServer(taskToDelete.id, taskToDelete.token);
-                    taskToDelete = null;
-                }
+                if (taskToDelete) { deleteFileFromServer(taskToDelete.id, taskToDelete.token); taskToDelete = null; }
                 elements.deleteConfirmModal.classList.remove('visible');
             });
             
             elements.useMasterPassCheckbox.addEventListener('change', () => elements.masterPassInputs.classList.toggle('hidden', !elements.useMasterPassCheckbox.checked));
             elements.compressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/compress', new FormData(elements.compressForm)); });
+            // *** 新增 ***
+            elements.decompressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/decompress-manual', new FormData(elements.decompressForm)); });
+
             elements.cancelButton.addEventListener('click', async () => { if (currentTaskId) await fetch(`/cancel/${currentTaskId}`, { method: 'POST' }); });
             elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
             elements.qrCodeModal.addEventListener('click', (e) => { if (e.target === elements.qrCodeModal) elements.qrCodeModal.classList.remove('visible'); });
@@ -301,9 +321,9 @@
                 updateThemeIcons(isDark);
             });
 
-            // --- 函式 ---
+            // --- (以下函式邏輯不變，只貼上必要的) ---
             function startTask(endpoint, body) {
-                elements.mainView.classList.add('hidden');
+                 elements.mainView.classList.add('hidden');
                 elements.shareView.classList.add('hidden');
                 elements.progressSection.classList.remove('hidden');
                 elements.resultSection.classList.add('hidden');
@@ -312,13 +332,11 @@
                 elements.progressBar.style.width = '0%';
                 elements.progressPercentage.textContent = '0%';
                 elements.progressStatus.textContent = '處理中...';
-
-                const fetchOptions = { method: 'POST', body: body };
+                 const fetchOptions = { method: 'POST', body: body };
                 if (typeof body === 'string') {
                     fetchOptions.headers = { 'Content-Type': 'application/json' };
                 }
-
-                fetch(endpoint, fetchOptions)
+                 fetch(endpoint, fetchOptions)
                     .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
                     .then(data => {
                         if (data.task_id) { currentTaskId = data.task_id; checkStatus(currentTaskId); } 
@@ -330,8 +348,7 @@
                         elements.cancelButton.classList.add('hidden');
                     });
             }
-
-            async function checkStatus(taskId) {
+             async function checkStatus(taskId) {
                 try {
                     const response = await fetch(`/status/${taskId}`);
                     if (!response.ok) return;
@@ -341,8 +358,7 @@
                     elements.progressPercentage.textContent = `${data.progress || 0}%`;
                     elements.logBox.innerHTML = (data.logs || []).join('\n');
                     elements.logBox.scrollTop = elements.logBox.scrollHeight;
-
-                    const finalStates = ['完成', '失敗', '已取消'];
+                     const finalStates = ['完成', '失敗', '已取消'];
                     if (finalStates.includes(data.status)) {
                         elements.progressStatus.textContent = data.status;
                         elements.resultTitle.textContent = `任務${data.status}！`;
@@ -355,24 +371,23 @@
                     }
                 } catch (error) { elements.logBox.innerHTML += `\n檢查狀態時發生錯誤。`; }
             }
-            
-            function displayResults(data) {
+             function displayResults(data) {
                 elements.resultButtons.innerHTML = '';
                 const isCompress = data.type === 'compress';
                 
                 if (isCompress) saveToHistory(data);
-                if (!isCompress && data.result_file_id) {
-                    elements.logBox.innerHTML += '\n\n日誌: 正在自動為您下載檔案...';
-                    window.location.href = `/download/${data._id}`;
+                if (data.result_file_id) { // Both compress and decompress can have a result file
+                     if (!isCompress) { // Auto-download only for decompress
+                        elements.logBox.innerHTML += '\n\n日誌: 正在自動為您下載檔案...';
+                        window.location.href = `/download/${data._id}`;
+                    }
+                     const downloadFileBtn = document.createElement('a');
+                    downloadFileBtn.href = `/download/${data._id}`;
+                    downloadFileBtn.textContent = `下載檔案 (${data.result_filename})`;
+                    downloadFileBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? 'bg-blue-600' : 'bg-green-600'}`;
+                    elements.resultButtons.appendChild(downloadFileBtn);
                 }
-
-                const downloadFileBtn = document.createElement('a');
-                downloadFileBtn.href = `/download/${data._id}`;
-                downloadFileBtn.textContent = `下載檔案 (${data.result_filename})`;
-                downloadFileBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? 'bg-blue-600' : 'bg-green-600'}`;
-                elements.resultButtons.appendChild(downloadFileBtn);
-
-                if (isCompress) {
+                 if (isCompress) {
                     updateStorageStats();
                     elements.resultSection.className = 'fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900';
                     elements.resultTitle.className = 'text-lg font-medium text-blue-800 dark:text-blue-300';
@@ -397,89 +412,80 @@
                     }
                 }
             }
-            
-            function displayShareLink(event, data) {
-                const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${data._id}`;
-                const urlContainer = document.createElement('div');
-                urlContainer.className = 'mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700';
-                const urlInput = document.createElement('input');
-                urlInput.type = 'text'; urlInput.value = shareUrl; urlInput.readOnly = true;
-                urlInput.className = 'flex-grow bg-transparent border-none text-sm p-1';
-                const copyButton = document.createElement('button');
-                copyButton.textContent = '複製';
-                copyButton.className = 'text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500';
-                copyButton.onclick = () => {
-                    urlInput.select();
-                    document.execCommand('copy');
-                    copyButton.textContent = '已複製!';
-                    setTimeout(() => { copyButton.textContent = '複製'; }, 2000);
+             function saveToHistory(taskData) {
+                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                const newEntry = {
+                    id: taskData._id,
+                    name: taskData.params.raw_filename,
+                    date: new Date().toLocaleString(),
+                    finalName: taskData.result_filename,
+                    token: taskData.delete_token
                 };
-                urlContainer.appendChild(urlInput);
-                urlContainer.appendChild(copyButton);
-                elements.resultButtons.appendChild(urlContainer);
-                event.target.closest('button').disabled = true;
+                history.unshift(newEntry);
+                if(history.length > 50) history.pop();
+                localStorage.setItem('compressHistory', JSON.stringify(history));
             }
-            
-            function showQrCode(taskId) {
-                elements.qrCodeContainer.innerHTML = '';
-                const img = document.createElement('img');
-                img.src = `/qrcode/${taskId}`;
-                img.alt = 'Share QR Code';
-                img.width = 250; img.height = 250;
-                elements.qrCodeContainer.appendChild(img);
-                elements.qrCodeModal.classList.add('visible');
+             function renderHistory() {
+                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                elements.historyList.innerHTML = '';
+                if(history.length === 0) {
+                    elements.historyList.innerHTML = `<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>`;
+                    return;
+                }
+                history.forEach(item => {
+                    const entry = document.createElement('div');
+                    entry.className = 'p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between';
+                    entry.innerHTML = `<div><p class="font-medium text-gray-900 dark:text-white">${item.name}</p><p class="text-sm text-gray-500 dark:text-gray-400">${item.date}</p></div><div class="flex gap-2"><button data-id="${item.id}" class="history-share-btn text-sm text-blue-500 hover:underline">分享</button><button data-id="${item.id}" class="history-qr-btn text-sm text-green-500 hover:underline">QR</button><button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn text-sm text-red-500 hover:underline">刪除</button></div>`;
+                    elements.historyList.appendChild(entry);
+                });
             }
-
-            function formatBytes(bytes, decimals = 2) {
-                if (bytes === 0) return '0 Bytes';
-                const k = 1024; const dm = decimals < 0 ? 0 : decimals;
-                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+             elements.historyList.addEventListener('click', (e) => {
+                const target = e.target;
+                const id = target.dataset.id;
+                if (!id) return;
+                 if (target.classList.contains('history-share-btn')) {
+                    const shareUrl = `${window.location.origin}${window.location.pathname}?share_id=${id}`;
+                    navigator.clipboard.writeText(shareUrl).then(() => {
+                        target.textContent = '已複製!';
+                        setTimeout(() => target.textContent = '分享', 2000);
+                    });
+                } else if (target.classList.contains('history-qr-btn')) {
+                    showQrCode(id);
+                } else if (target.classList.contains('history-delete-btn')) {
+                    const token = target.dataset.token;
+                    promptDeleteFile(id, token);
+                }
+            });
+             function promptDeleteFile(taskId, token) {
+                taskToDelete = { id: taskId, token: token };
+                elements.deleteConfirmModal.classList.add('visible');
             }
-
-            async function updateStorageStats() {
+             async function deleteFileFromServer(taskId, token) {
                 try {
-                    const response = await fetch('/storage-stats');
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    const used = data.used_space; const total = data.total_space;
-                    const percentage = total > 0 ? (used / total) * 100 : 0;
-                    elements.storage.bar.style.width = `${percentage}%`;
-                    elements.storage.text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
-                    if (percentage > 90) elements.storage.bar.className = 'bg-red-500 h-2 rounded-full';
-                    else if (percentage > 70) elements.storage.bar.className = 'bg-yellow-500 h-2 rounded-full';
-                    else elements.storage.bar.className = 'bg-indigo-500 h-2 rounded-full';
-                } catch (error) { elements.storage.text.textContent = '無法取得資訊'; }
-            }
-            
-            async function showShareView(shareId) {
-                elements.mainView.classList.add('hidden');
-                elements.shareView.classList.remove('hidden');
-                try {
-                    const response = await fetch(`/status/${shareId}`);
-                    if (!response.ok) throw new Error('找不到分享的檔案或連結已過期。');
-                    const data = await response.json();
-                    if (data.type !== 'compress' || !data.result_filename) throw new Error('此連結不是一個有效的分享連結。');
-                    elements.share.filename.textContent = `準備解壓縮檔案: ${data.result_filename}`;
-                    const needsMasterPass = data.password_file_content && data.password_file_content.includes('(特殊密碼層)');
-                    if (needsMasterPass) elements.share.masterPassPrompt.classList.remove('hidden');
-                    elements.share.startBtn.onclick = () => {
-                        const body = JSON.stringify({
-                            master_password: needsMasterPass ? elements.share.masterPassInput.value : null
-                        });
-                        startTask(`/start-shared-decompression/${shareId}`, body);
-                    };
-                } catch (error) {
-                    elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${error.message}</div>`;
+                    const response = await fetch(`/delete/${taskId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error);
+                    
+                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                    history = history.filter(item => item.id !== taskId);
+                    localStorage.setItem('compressHistory', JSON.stringify(history));
+                    renderHistory();
+                    updateStorageStats();
+                 } catch (error) {
+                    alert(`刪除失敗: ${error.message}`);
                 }
             }
-            
-            function updateThemeIcons(isDark) {
-                elements.themeToggleDarkIcon.classList.toggle('hidden', !isDark);
-                elements.themeToggleLightIcon.classList.toggle('hidden', isDark);
-            }
-
+            // --- (The rest of the functions are unchanged) ---
+            function displayShareLink(e,d){const t=`${window.location.origin}${window.location.pathname}?share_id=${d._id}`,o=document.createElement("div");o.className="mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700";const n=document.createElement("input");n.type="text",n.value=t,n.readOnly=!0,n.className="flex-grow bg-transparent border-none text-sm p-1";const s=document.createElement("button");s.textContent="複製",s.className="text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500",s.onclick=()=>{n.select(),document.execCommand("copy"),s.textContent="已複製!",setTimeout(()=>{s.textContent="複製"},2e3)},o.appendChild(n),o.appendChild(s),elements.resultButtons.appendChild(o),e.target.closest("button").disabled=!0}
+            function showQrCode(d){elements.qrCodeContainer.innerHTML="";const t=document.createElement("img");t.src=`/qrcode/${d}`,t.alt="Share QR Code",t.width=250,t.height=250,elements.qrCodeContainer.appendChild(t),elements.qrCodeModal.classList.add("visible")}
+            function formatBytes(d,t=2){if(0===d)return"0 Bytes";const o=1024,n=t<0?0:t,s=["Bytes","KB","MB","GB","TB"],e=Math.floor(Math.log(d)/Math.log(o));return parseFloat((d/Math.pow(o,e)).toFixed(n))+" "+s[e]}
+            async function updateStorageStats(){try{const d=await fetch("/storage-stats");if(!d.ok)return;const t=await d.json(),o=t.used_space,n=t.total_space,s=n>0?o/n*100:0;elements.storage.bar.style.width=`${s}%`,elements.storage.text.textContent=`${formatBytes(o)} / ${formatBytes(n)}`,elements.storage.bar.className=s>90?"bg-red-500 h-2 rounded-full":s>70?"bg-yellow-500 h-2 rounded-full":"bg-indigo-500 h-2 rounded-full"}catch(d){elements.storage.text.textContent="無法取得資訊"}}
+            async function showShareView(d){elements.mainView.classList.add("hidden"),elements.shareView.classList.remove("hidden");try{const t=await fetch(`/status/${d}`);if(!t.ok)throw new Error("找不到分享的檔案或連結已過期。");const o=await t.json();if("compress"!==o.type||!o.result_filename)throw new Error("此連結不是一個有效的分享連結。");elements.share.filename.textContent=`準備解壓縮檔案: ${o.result_filename}`;const n=o.password_file_content&&o.password_file_content.includes("(特殊密碼層)");n&&elements.share.masterPassPrompt.classList.remove("hidden"),elements.share.startBtn.onclick=()=>{const t=JSON.stringify({master_password:n?elements.share.masterPassInput.value:null});startTask(`/start-shared-decompression/${d}`,t)}}catch(t){elements.shareView.innerHTML=`<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${t.message}</div>`}}
+            function updateThemeIcons(d){elements.themeToggleDarkIcon.classList.toggle("hidden",!d),elements.themeToggleLightIcon.classList.toggle("hidden",d)}
             // --- 初始執行 ---
             updateThemeIcons(document.documentElement.classList.contains('dark'));
             const shareId = new URLSearchParams(window.location.search).get('share_id');
