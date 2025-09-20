@@ -19,8 +19,6 @@ from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 from gridfs import GridFS
 from urllib.parse import quote
-import qrcode # *** 關鍵修改：引入 QR Code 工具 ***
-import io     # *** 關鍵修改：引入記憶體處理工具 ***
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -285,8 +283,14 @@ def start_shared_decompression(compress_task_id):
 def storage_stats():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
     try:
-        stats = db.command('dbstats')
-        used_space = stats.get('fsUsedSize', 0)
+        # *** 關鍵修改：使用更精準的 aggregation 來計算 GridFS 的大小 ***
+        pipeline = [
+            {'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}
+        ]
+        # 在 fs.files 集合上執行 aggregation
+        result = list(db['fs.files'].aggregate(pipeline))
+        used_space = result[0]['total_size'] if result else 0
+
         total_space = 512 * 1024 * 1024
         return jsonify({'used_space': used_space, 'total_space': total_space})
     except Exception as e:
@@ -304,35 +308,6 @@ def task_status(task_id):
     if task:
         task['_id'] = str(task['_id']); return jsonify(task)
     return jsonify({'error': '找不到任務'}), 404
-
-# *** 關鍵修改：新增 QR Code 產生路由 ***
-@app.route('/qrcode/<task_id>')
-def generate_qr_code(task_id):
-    try:
-        # 組合分享連結
-        share_url = f"{request.host_url}?share_id={task_id}"
-        
-        # 產生 QR Code
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(share_url)
-        qr.make(fit=True)
-
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        # 將圖片儲存到記憶體中
-        img_io = io.BytesIO()
-        img.save(img_io, 'PNG')
-        img_io.seek(0)
-        
-        return send_file(img_io, mimetype='image/png')
-    except Exception as e:
-        logging.error(f"產生 QR Code 時發生錯誤: {e}")
-        return "無法產生 QR Code", 500
 
 @app.route('/download/<task_id>')
 def download_file(task_id):
