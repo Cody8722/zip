@@ -255,7 +255,6 @@ def compress_route():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-# *** 關鍵修改：新增手動解壓縮路由 ***
 @app.route('/decompress-manual', methods=['POST'])
 def decompress_manual_route():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
@@ -276,7 +275,8 @@ def decompress_manual_route():
 
         params = {
             'password_list': password_list,
-            'master_pass': master_pass
+            'master_pass': master_pass,
+            'expected_filename': file.filename
         }
         
         task = {'type': 'decompress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
@@ -294,13 +294,12 @@ def decompress_manual_route():
             tasks_collection.delete_one({'_id': task_id})
         return jsonify({'error': str(e)}), 400
 
-
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
 def start_shared_decompression(compress_task_id):
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
     try:
         original_task = tasks_collection.find_one({'_id': ObjectId(compress_task_id)})
-        if not original_task or 'result_file_id' not in original_task: raise ValueError("找不到原始壓縮任務。")
+        if not original_task or 'result_file_id' not in original_task: raise ValueError("找不到原始壓縮任務或檔案可能已被刪除。")
         
         file_id = ObjectId(original_task['result_file_id'])
         filename = original_task['result_filename']
@@ -356,31 +355,94 @@ def delete_file(task_id):
     try:
         data = request.get_json()
         token = data.get('token')
-        if not token:
-            return jsonify({'error': '缺少 Token'}), 400
+        if not token: return jsonify({'error': '缺少 Token'}), 400
 
         task = tasks_collection.find_one({'_id': ObjectId(task_id)})
-        if not task:
-            return jsonify({'error': '找不到任務'}), 404
-        
-        if task.get('delete_token') != token:
-            return jsonify({'error': 'Token 無效'}), 403
+        if not task: return jsonify({'error': '找不到任務'}), 404
+        if task.get('delete_token') != token: return jsonify({'error': 'Token 無效'}), 403
 
         if 'result_file_id' in task and task['result_file_id']:
             file_id = ObjectId(task['result_file_id'])
             fs.delete(file_id)
         
         tasks_collection.update_one({'_id': ObjectId(task_id)}, {
-            '$unset': {
-                'result_file_id': "", 'result_filename': "",
-                'password_file_content': "", 'delete_token': ""
-            },
+            '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
             '$set': {'status': '已刪除'}
         })
         return jsonify({'message': '檔案已成功刪除'})
     except Exception as e:
         logging.error(f"刪除檔案時發生錯誤: {e}")
         return jsonify({'error': '刪除檔案時發生內部錯誤'}), 500
+
+@app.route('/delete-batch', methods=['POST'])
+def delete_batch():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        data = request.get_json()
+        tasks_to_delete = data.get('tasks')
+        if not isinstance(tasks_to_delete, list):
+            return jsonify({'error': '無效的請求格式'}), 400
+
+        deleted_count = 0; failed_count = 0
+
+        for task_info in tasks_to_delete:
+            task_id = task_info.get('id'); token = task_info.get('token')
+            if not task_id or not token:
+                failed_count += 1; continue
+            try:
+                task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+                if task and task.get('delete_token') == token:
+                    if 'result_file_id' in task and task['result_file_id']:
+                        fs.delete(ObjectId(task['result_file_id']))
+                    tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+                        '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
+                        '$set': {'status': '已刪除'}
+                    })
+                    deleted_count += 1
+                else: failed_count += 1
+            except Exception as e:
+                logging.error(f"批次刪除時發生錯誤 (task_id: {task_id}): {e}"); failed_count += 1
+        
+        return jsonify({'message': '批次刪除處理完成', 'deleted_count': deleted_count, 'failed_count': failed_count})
+    except Exception as e:
+        logging.error(f"批次刪除時發生嚴重錯誤: {e}")
+        return jsonify({'error': '批次刪除時發生內部錯誤'}), 500
+
+# *** 關鍵修改：新增清理舊檔案的路由 ***
+@app.route('/cleanup-orphans', methods=['POST'])
+def cleanup_orphans():
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        # 找出所有 "完成" 且有檔案，但 "沒有" delete_token 的壓縮任務
+        find_query = {
+            'type': 'compress',
+            'status': '完成',
+            'result_file_id': {'$exists': True},
+            'delete_token': {'$exists': False}
+        }
+        orphaned_tasks = list(tasks_collection.find(find_query))
+        
+        cleaned_count = 0
+        for task in orphaned_tasks:
+            file_id_str = task.get('result_file_id')
+            if file_id_str:
+                try:
+                    fs.delete(ObjectId(file_id_str))
+                    tasks_collection.update_one(
+                        {'_id': task['_id']},
+                        {
+                            '$set': {'status': '已刪除 (舊檔案)'},
+                            '$unset': {'result_file_id': "", 'result_filename': "", 'password_file_content': ""}
+                        }
+                    )
+                    cleaned_count += 1
+                except Exception as e:
+                    logging.error(f"清理舊檔案時發生錯誤 (task_id: {task['_id']}): {e}")
+        
+        return jsonify({'message': '舊檔案清理完成', 'cleaned_count': cleaned_count})
+    except Exception as e:
+        logging.error(f"清理舊檔案時發生嚴重錯誤: {e}")
+        return jsonify({'error': '清理舊檔案時發生內部錯誤'}), 500
 
 
 @app.route('/qrcode/<task_id>')
