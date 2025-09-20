@@ -62,13 +62,14 @@ except Exception as e:
 def generate_password(length=12):
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for i in range(length))
-def update_task_log(task_id, message):
-    tasks_collection.update_one({'_id': task_id}, {'$push': {'logs': message}})
+def update_task_log(task_id, message, is_progress_text=False):
+    update_doc = {'$push': {'logs': message}}
+    if is_progress_text:
+        update_doc['$set'] = {'progress_text': message}
+    tasks_collection.update_one({'_id': task_id}, update_doc)
 
-# *** 關鍵修改：更新進度回報函式 ***
-def update_task_progress(task_id, progress, text=""):
-    tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress, 'progress_text': text}})
-
+def update_task_progress(task_id, progress):
+    tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
 def parse_password_text(password_text):
     password_list = []
     for line in password_text.strip().split('\n'):
@@ -101,10 +102,6 @@ def compression_worker(task_id_str):
             if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
                 update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
 
-            # *** 關鍵修改：更新進度文字 ***
-            progress_text = f"正在處理第 {i} / {iterations} 層..."
-            update_task_progress(task_id, int((i / iterations) * 100), progress_text)
-
             format_name = params['formats'][(i - 1) % len(params['formats'])]
             output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[format_name]}")
             
@@ -116,18 +113,20 @@ def compression_worker(task_id_str):
                     password = generate_password(); log_pwd = password
 
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
-            update_task_log(task_id, f"--- 第 {i}/{iterations} 層 (格式: {format_name}, 加密: {'是' if password else '否'}) ---")
+            progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
+            update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
 
             if format_name in ('zip', '7z'):
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z: z.write(current_file, os.path.basename(current_file))
-            else: # TAR
+            else:
                 mode = {'targz': 'w:gz', 'tarbz2': 'w:bz2', 'tarxz': 'w:xz'}[format_name]
                 with tarfile.open(output_filename, mode) as tf: tf.add(current_file, arcname=os.path.basename(current_file))
             
             if current_file != original_file: os.remove(current_file)
             current_file = output_filename
+            update_task_progress(task_id, int((i / iterations) * 100))
         
-        update_task_log(task_id, "✅ 壓縮流程結束。")
+        update_task_log(task_id, "✅ 壓縮流程結束。", is_progress_text=True)
         final_filename = os.path.basename(current_file)
 
         update_task_log(task_id, "日誌: 正在將最終檔案存入安全資料庫...")
@@ -142,14 +141,13 @@ def compression_worker(task_id_str):
         tasks_collection.update_one({'_id': task_id}, {'$set': { 
             'status': '完成', 
             'progress': 100, 
-            'progress_text': '任務完成！',
             'result_file_id': str(file_id),
             'result_filename': final_filename, 
             'password_file_content': password_file_content,
-            'delete_token': delete_token 
+            'delete_token': delete_token
         }})
     except Exception as e:
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗！'}})
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
         update_task_log(task_id, f"❌ 嚴重錯誤: {e}")
     finally:
         if os.path.exists(original_file): os.remove(original_file)
@@ -172,11 +170,6 @@ def decompression_worker(task_id_str):
                 update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
 
             layer_num = total_layers - i
-            
-            # *** 關鍵修改：更新進度文字 ***
-            progress_text = f"正在解壓縮第 {layer_num} / {total_layers} 層..."
-            update_task_progress(task_id, int(((i + 1) / total_layers) * 100), progress_text)
-
             filename, password = layer_info['filename'], layer_info['password']
             password_usage_log = "否"
             if password == 'MASTER_PASSWORD_PLACEHOLDER':
@@ -184,15 +177,15 @@ def decompression_worker(task_id_str):
                 password = master_pass; password_usage_log = "是 (使用特殊密碼)"
             elif password:
                 password_usage_log = "是 (使用儲存的密碼)"
-
-            update_task_log(task_id, f"--- 第 {layer_num}/{total_layers} 層 ({filename}) ---")
-            update_task_log(task_id, f"日誌: 本層是否需要密碼: {password_usage_log}")
+            
+            progress_text = f"正在解壓縮第 {layer_num}/{total_layers} 層 ({filename})"
+            update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
             
             output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
             
             if filename.endswith(('.zip', '.7z')):
                 with py7zr.SevenZipFile(current_file, 'r', password=password) as z: z.extractall(path=output_path)
-            else: # TAR
+            else:
                 with tarfile.open(current_file, 'r:*') as tf: tf.extractall(path=output_path)
             
             if current_file != original_file: os.remove(current_file)
@@ -204,6 +197,8 @@ def decompression_worker(task_id_str):
             shutil.move(os.path.join(output_path, extracted_files[0]), new_file_path)
             shutil.rmtree(output_path)
             current_file = new_file_path
+            
+            update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
         final_filename_from_archive = os.path.basename(current_file)
         expected_filename = params.get('expected_filename')
@@ -217,18 +212,18 @@ def decompression_worker(task_id_str):
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 
             'progress': 100, 
-            'progress_text': '任務完成！',
             'result_file_id': str(file_id),
-            'result_filename': final_filename_to_store
+            'result_filename': final_filename_to_store,
+            'progress_text': '任務完成！'
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
     except Exception as e:
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗！'}})
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
         update_task_log(task_id, f"❌ 錯誤: {e}")
     finally:
         if os.path.exists(original_file): os.remove(original_file)
 
-# --- (API 路由與其他程式碼不變) ---
+# --- (API 路由與之前相同，只修改了日誌部分) ---
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -254,7 +249,7 @@ def compress_route():
         task_id = tasks_collection.insert_one(task).inserted_id
         filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{safe_filename}")
         file.save(filepath)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
         threading.Thread(target=compression_worker, args=(str(task_id),)).start()
         return jsonify({'task_id': str(task_id)})
     except Exception as e:
@@ -276,7 +271,7 @@ def decompress_manual_route():
         task_id = tasks_collection.insert_one(task).inserted_id
         filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{filename}")
         file.save(filepath)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中'}})
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
         threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
         return jsonify({'task_id': str(task_id)})
     except Exception as e:
@@ -303,6 +298,7 @@ def start_shared_decompression(compress_task_id):
         }
         new_task = {'type': 'decompress', 'status': '處理中', 'params': params, 'created_at': datetime.utcnow()}
         new_task_id = tasks_collection.insert_one(new_task).inserted_id
+        tasks_collection.update_one({'_id': new_task_id}, {'$set': {'progress_text': '準備開始...'}})
         threading.Thread(target=decompression_worker, args=(str(new_task_id),)).start()
         return jsonify({'task_id': str(new_task_id)})
     except Exception as e:
@@ -340,8 +336,7 @@ def delete_file(task_id):
         if not task: return jsonify({'error': '找不到任務'}), 404
         if task.get('delete_token') != token: return jsonify({'error': 'Token 無效'}), 403
         if 'result_file_id' in task and task['result_file_id']:
-            file_id = ObjectId(task['result_file_id'])
-            fs.delete(file_id)
+            fs.delete(ObjectId(task['result_file_id']))
         tasks_collection.update_one({'_id': ObjectId(task_id)}, {
             '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
             '$set': {'status': '已刪除'}
@@ -383,8 +378,7 @@ def delete_batch():
 @app.route('/delete-all-files', methods=['POST'])
 def delete_all_files():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
-    if not ADMIN_SECRET:
-        return jsonify({'error': '伺服器未設定管理員密碼'}), 500
+    if not ADMIN_SECRET: return jsonify({'error': '伺服器未設定管理員密碼'}), 500
     data = request.get_json()
     admin_secret_provided = data.get('admin_secret')
     if admin_secret_provided != ADMIN_SECRET:
