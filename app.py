@@ -85,7 +85,6 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     params = task['params']; original_file = params['original_file']
     try:
         iterations = params['iterations']
-        # ... (其餘壓縮邏輯與之前相同)
         password_file_content = "--- 壓縮密碼表 ---\n"
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
@@ -130,9 +129,8 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
         logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
     finally:
-        if os.path.exists(original_file): os.remove(original_file)
+        if 'original_file' in locals() and os.path.exists(original_file): os.remove(original_file)
 
-# *** 關鍵修改：徹底重寫解壓縮邏輯以防止資料遺失 ***
 def decompression_worker(task_id_str):
     task_id = ObjectId(task_id_str)
     task = tasks_collection.find_one({'_id': task_id});
@@ -170,19 +168,18 @@ def decompression_worker(task_id_str):
             extracted_items = os.listdir(output_path)
             if not extracted_items: raise Exception("解壓縮後找不到任何檔案。")
             
-            # 將解壓出的單一檔案/資料夾移出，準備下一輪
             next_item_path = os.path.join(output_path, extracted_items[0])
             moved_item_path = os.path.join(OUTPUT_FOLDER, extracted_items[0])
             shutil.move(next_item_path, moved_item_path)
-            shutil.rmtree(output_path) # 清理暫存目錄
+            shutil.rmtree(output_path)
             current_file = moved_item_path
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        # --- 最終處理：重新打包所有檔案 ---
         update_task_log(task_id, "日誌: 所有層級已解壓，正在重新打包最終檔案...", is_progress_text=True)
-        final_filename_to_store = params.get('expected_filename', f"{task_id_str}_decompressed.zip")
-        final_archive_path = os.path.join(OUTPUT_FOLDER, final_filename_to_store)
+        final_zip_name_base = os.path.splitext(params.get('expected_filename', 'decompressed_output'))[0]
+        final_zip_name = f"{final_zip_name_base}.zip"
+        final_archive_path = os.path.join(OUTPUT_FOLDER, final_zip_name)
 
         with zipfile.ZipFile(final_archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             if os.path.isdir(current_file):
@@ -191,15 +188,15 @@ def decompression_worker(task_id_str):
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, current_file)
                         zipf.write(file_path, arcname)
-            else: # 如果解壓出來的是單一檔案
+            else:
                 zipf.write(current_file, os.path.basename(current_file))
 
         with open(final_archive_path, 'rb') as f_in:
-            file_id = fs.put(f_in, filename=final_filename_to_store)
+            file_id = fs.put(f_in, filename=final_zip_name)
 
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 'progress': 100, 
-            'result_file_id': str(file_id), 'result_filename': final_filename_to_store,
+            'result_file_id': str(file_id), 'result_filename': final_zip_name,
             'progress_text': '任務完成！'
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
@@ -207,8 +204,7 @@ def decompression_worker(task_id_str):
         logging.error(f"解壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
     finally:
-        # 清理所有可能的暫存檔案
-        if os.path.exists(original_file): os.remove(original_file)
+        if 'original_file' in locals() and os.path.exists(original_file): os.remove(original_file)
         if 'current_file' in locals() and os.path.exists(current_file):
             if os.path.isdir(current_file): shutil.rmtree(current_file)
             else: os.remove(current_file)
@@ -217,7 +213,6 @@ def decompression_worker(task_id_str):
         if os.path.exists(output_path): shutil.rmtree(output_path)
 
 def send_completion_email(recipient_email, task_id, original_filename, host_url):
-    # ... (此函式邏輯不變)
     if not MAIL_USERNAME or not MAIL_PASSWORD: raise Exception("伺服器未設定郵件功能。")
     msg = EmailMessage()
     msg['Subject'] = f"您的檔案「{original_filename}」已壓縮完成！"
@@ -225,26 +220,25 @@ def send_completion_email(recipient_email, task_id, original_filename, host_url)
     msg['To'] = recipient_email
     download_url = f"{host_url}download/{task_id}"
     share_url = f"{host_url}?share_id={task_id}"
-    html_content = f"""<html><body>...</body></html>""" # 內容省略
+    html_content = f"<html><body><p>您好，</p><p>您先前提交的檔案 <b>{original_filename}</b> 已經成功壓縮完成了。</p><p>您可以透過以下連結進行操作：</p><ul><li><a href='{download_url}'><b>直接下載壓縮檔</b></a></li><li><a href='{share_url}'>產生分享連結與 QR Code</a></li></ul><p>感謝您的使用！</p></body></html>"
     msg.add_alternative(html_content, subtype='html')
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
         smtp.send_message(msg)
 
 # --- API 路由 ---
-@app.route('/')
-def index(): return render_template('index.html')
-
-# *** 關鍵修改：所有路由增加通用錯誤處理 ***
 def handle_route_exception(e, endpoint_name):
     logging.error(f"路由 {endpoint_name} 發生錯誤: {e}", exc_info=True)
     return jsonify({'error': '伺服器內部發生錯誤，請稍後再試。'}), 500
+
+@app.route('/')
+def index(): return render_template('index.html')
 
 @app.route('/compress', methods=['POST'])
 def compress_route():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
-        # ... (其餘邏輯與之前相同)
+        if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
         file = request.files['file']
         params = {
             'raw_filename': file.filename, 'iterations': int(request.form.get('iterations', 5)),
@@ -265,7 +259,29 @@ def compress_route():
     except Exception as e:
         return handle_route_exception(e, 'compress')
 
-# *** 關鍵修改：使用流式處理讀取檔案 ***
+@app.route('/decompress-manual', methods=['POST'])
+def decompress_manual_route():
+    try:
+        if db is None: return jsonify({'error': '資料庫未連線'}), 500
+        if 'file' not in request.files: return jsonify({'error': '沒有上傳檔案'}), 400
+        file = request.files['file']
+        params = { 
+            'password_list': parse_password_text(request.form.get('passwords', '')), 
+            'master_pass': request.form.get('master_password'), 
+            'expected_filename': file.filename 
+        }
+        if not params['password_list']: raise ValueError("無法解析您提供的密碼表。")
+        task = {'type': 'decompress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+        task_id = tasks_collection.insert_one(task).inserted_id
+        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
+        file.save(filepath)
+        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
+        threading.Thread(target=decompression_worker, args=(str(task_id),)).start()
+        return jsonify({'task_id': str(task_id)})
+    except Exception as e:
+        if 'task_id' in locals(): tasks_collection.delete_one({'_id': task_id})
+        return handle_route_exception(e, 'decompress_manual')
+
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
 def start_shared_decompression(compress_task_id):
     try:
@@ -276,7 +292,7 @@ def start_shared_decompression(compress_task_id):
         filepath = os.path.join(UPLOAD_FOLDER, f"share_{secure_filename(original_task['result_filename'])}")
         grid_out = fs.get(ObjectId(original_task['result_file_id']))
         with open(filepath, 'wb') as f_out:
-            for chunk in grid_out: # 流式寫入
+            for chunk in grid_out:
                 f_out.write(chunk)
         
         params = {
@@ -291,13 +307,86 @@ def start_shared_decompression(compress_task_id):
     except Exception as e:
         return handle_route_exception(e, 'start_shared_decompression')
 
-# *** 關鍵修改：使用 secrets.compare_digest() ***
+@app.route('/storage-stats')
+def storage_stats():
+    try:
+        if db is None: return jsonify({'error': '資料庫未連線'}), 500
+        pipeline = [{'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}]
+        result = list(db['fs.files'].aggregate(pipeline))
+        used_space = result[0]['total_size'] if result else 0
+        return jsonify({'used_space': used_space, 'total_space': 512 * 1024 * 1024})
+    except Exception as e:
+        return handle_route_exception(e, 'storage_stats')
+
+@app.route('/cancel/<task_id>', methods=['POST'])
+def cancel_task(task_id):
+    try:
+        tasks_collection.update_one({'_id': ObjectId(task_id)}, {'$set': {'cancel_requested': True}})
+        return jsonify({'status': 'cancellation requested'})
+    except Exception as e:
+        return handle_route_exception(e, 'cancel')
+
+@app.route('/status/<task_id>')
+def task_status(task_id):
+    try:
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if task:
+            task['_id'] = str(task['_id']); return jsonify(task)
+        return jsonify({'error': '找不到任務'}), 404
+    except Exception as e:
+        return handle_route_exception(e, 'status')
+
+@app.route('/delete/<task_id>', methods=['POST'])
+def delete_file(task_id):
+    try:
+        if db is None: return jsonify({'error': '資料庫未連線'}), 500
+        token = request.get_json().get('token')
+        if not token: return jsonify({'error': '缺少 Token'}), 400
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task: return jsonify({'error': '找不到任務'}), 404
+        if not secrets.compare_digest(task.get('delete_token', ""), token): return jsonify({'error': 'Token 無效'}), 403
+        if 'result_file_id' in task and task['result_file_id']:
+            fs.delete(ObjectId(task['result_file_id']))
+        tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+            '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
+            '$set': {'status': '已刪除'}
+        })
+        return jsonify({'message': '檔案已成功刪除'})
+    except Exception as e:
+        return handle_route_exception(e, 'delete')
+
+@app.route('/delete-batch', methods=['POST'])
+def delete_batch():
+    try:
+        if db is None: return jsonify({'error': '資料庫未連線'}), 500
+        tasks_to_delete = request.get_json().get('tasks', [])
+        deleted_count = 0; failed_count = 0
+        for task_info in tasks_to_delete:
+            task_id = task_info.get('id'); token = task_info.get('token')
+            if not task_id or not token:
+                failed_count += 1; continue
+            try:
+                task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+                if task and secrets.compare_digest(task.get('delete_token', ""), token):
+                    if 'result_file_id' in task and task['result_file_id']:
+                        fs.delete(ObjectId(task['result_file_id']))
+                    tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+                        '$unset': { 'result_file_id': "", 'result_filename': "", 'password_file_content': "", 'delete_token': "" },
+                        '$set': {'status': '已刪除'}
+                    })
+                    deleted_count += 1
+                else: failed_count += 1
+            except Exception:
+                failed_count += 1
+        return jsonify({'message': '批次刪除處理完成', 'deleted_count': deleted_count, 'failed_count': failed_count})
+    except Exception as e:
+        return handle_route_exception(e, 'delete_batch')
+
 @app.route('/delete-all-files', methods=['POST'])
 def delete_all_files():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
         if not ADMIN_SECRET: return jsonify({'error': '伺服器未設定管理員密碼'}), 500
-        
         admin_secret_provided = request.get_json().get('admin_secret', "")
         if not secrets.compare_digest(admin_secret_provided, ADMIN_SECRET):
             return jsonify({'error': '管理員密碼錯誤'}), 403
@@ -316,22 +405,31 @@ def delete_all_files():
     except Exception as e:
         return handle_route_exception(e, 'delete_all_files')
 
-# --- (其餘路由與之前相同，但都加上了通用錯誤處理) ---
-@app.route('/decompress-manual', methods=['POST'])
-def decompress_manual_route():
+@app.route('/qrcode/<task_id>')
+def generate_qr_code(task_id):
     try:
-        # ... 邏輯 ...
-        return jsonify({'task_id': str(task_id)})
+        share_url = f"{request.host_url}?share_id={task_id}"
+        img_io = io.BytesIO()
+        qrcode.make(share_url).save(img_io, 'PNG')
+        img_io.seek(0)
+        return send_file(img_io, mimetype='image/png')
     except Exception as e:
-        return handle_route_exception(e, 'decompress_manual')
-@app.route('/storage-stats')
-def storage_stats():
+        return handle_route_exception(e, 'qrcode')
+
+@app.route('/download/<task_id>')
+def download_file(task_id):
     try:
-        # ... 邏輯 ...
-        return jsonify({'used_space': used_space, 'total_space': total_space})
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task or 'result_file_id' not in task:
+            return "檔案可能已被刪除或不存在。", 404
+        
+        grid_out = fs.get(ObjectId(task['result_file_id']))
+        response = send_file(io.BytesIO(grid_out.read()), mimetype='application/octet-stream', as_attachment=True, download_name=task['result_filename'])
+        encoded_filename = quote(task['result_filename'].encode('utf-8'))
+        response.headers['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_filename}"
+        return response
     except Exception as e:
-        return handle_route_exception(e, 'storage_stats')
-# ...以此類推...
+        return handle_route_exception(e, 'download')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
