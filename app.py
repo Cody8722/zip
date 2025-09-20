@@ -19,6 +19,9 @@ from werkzeug.utils import secure_filename
 from cryptography.fernet import Fernet
 from gridfs import GridFS
 from urllib.parse import quote
+import qrcode
+import io
+import secrets # *** 關鍵修改：引入 secrets 來產生安全的 token ***
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -127,12 +130,16 @@ def compression_worker(task_id_str):
         
         os.remove(current_file)
 
+        # *** 關鍵修改：新增自毀 token ***
+        delete_token = secrets.token_hex(16)
+
         tasks_collection.update_one({'_id': task_id}, {'$set': { 
             'status': '完成', 
             'progress': 100, 
             'result_file_id': str(file_id),
             'result_filename': final_filename, 
-            'password_file_content': password_file_content 
+            'password_file_content': password_file_content,
+            'delete_token': delete_token # 儲存 token
         }})
     except Exception as e:
         tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗'}})
@@ -283,14 +290,9 @@ def start_shared_decompression(compress_task_id):
 def storage_stats():
     if db is None: return jsonify({'error': '資料庫未連線'}), 500
     try:
-        # *** 關鍵修改：使用更精準的 aggregation 來計算 GridFS 的大小 ***
-        pipeline = [
-            {'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}
-        ]
-        # 在 fs.files 集合上執行 aggregation
+        pipeline = [{'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}]
         result = list(db['fs.files'].aggregate(pipeline))
         used_space = result[0]['total_size'] if result else 0
-
         total_space = 512 * 1024 * 1024
         return jsonify({'used_space': used_space, 'total_space': total_space})
     except Exception as e:
@@ -309,12 +311,65 @@ def task_status(task_id):
         task['_id'] = str(task['_id']); return jsonify(task)
     return jsonify({'error': '找不到任務'}), 404
 
+# *** 關鍵修改：新增檔案刪除路由 ***
+@app.route('/delete/<task_id>', methods=['POST'])
+def delete_file(task_id):
+    if db is None: return jsonify({'error': '資料庫未連線'}), 500
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        if not token:
+            return jsonify({'error': '缺少 Token'}), 400
+
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task:
+            return jsonify({'error': '找不到任務'}), 404
+        
+        if task.get('delete_token') != token:
+            return jsonify({'error': 'Token 無效'}), 403
+
+        if 'result_file_id' in task and task['result_file_id']:
+            file_id = ObjectId(task['result_file_id'])
+            fs.delete(file_id)
+        
+        # 移除相關欄位，讓分享連結失效
+        tasks_collection.update_one({'_id': ObjectId(task_id)}, {
+            '$unset': {
+                'result_file_id': "",
+                'result_filename': "",
+                'password_file_content': "",
+                'delete_token': ""
+            },
+            '$set': {'status': '已刪除'}
+        })
+        return jsonify({'message': '檔案已成功刪除'})
+    except Exception as e:
+        logging.error(f"刪除檔案時發生錯誤: {e}")
+        return jsonify({'error': '刪除檔案時發生內部錯誤'}), 500
+
+
+@app.route('/qrcode/<task_id>')
+def generate_qr_code(task_id):
+    try:
+        share_url = f"{request.host_url}?share_id={task_id}"
+        qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=10, border=4)
+        qr.add_data(share_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        img_io = io.BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        return send_file(img_io, mimetype='image/png')
+    except Exception as e:
+        logging.error(f"產生 QR Code 時發生錯誤: {e}")
+        return "無法產生 QR Code", 500
+
 @app.route('/download/<task_id>')
 def download_file(task_id):
     try:
         task = tasks_collection.find_one({'_id': ObjectId(task_id)})
         if not task or 'result_file_id' not in task:
-            return "找不到檔案紀錄。", 404
+            return "檔案可能已被刪除或不存在。", 404
         
         file_id = ObjectId(task['result_file_id'])
         filename = task['result_filename']
