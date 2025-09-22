@@ -131,6 +131,7 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     finally:
         if 'original_file' in locals() and os.path.exists(original_file): os.remove(original_file)
 
+# *** 關鍵修改：徹底重寫解壓縮邏輯，加入智慧型拆包 ***
 def decompression_worker(task_id_str):
     task_id = ObjectId(task_id_str)
     task = tasks_collection.find_one({'_id': task_id});
@@ -176,27 +177,34 @@ def decompression_worker(task_id_str):
             
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        update_task_log(task_id, "日誌: 所有層級已解壓，正在重新打包最終檔案...", is_progress_text=True)
-        final_zip_name_base = os.path.splitext(params.get('expected_filename', 'decompressed_output'))[0]
-        final_zip_name = f"{final_zip_name_base}.zip"
-        final_archive_path = os.path.join(OUTPUT_FOLDER, final_zip_name)
+        update_task_log(task_id, "日誌: 所有層級已解壓，正在檢查最終內容...", is_progress_text=True)
+        expected_filename = params.get('expected_filename', 'decompressed_output')
+        
+        # --- 智慧型拆包邏輯 ---
+        if os.path.isdir(current_file):
+            update_task_log(task_id, "日誌: 偵測到多個檔案，將打包成 ZIP 檔。")
+            final_zip_name_base = os.path.splitext(expected_filename)[0]
+            final_filename_to_store = f"{final_zip_name_base}.zip"
+            final_archive_path = os.path.join(OUTPUT_FOLDER, final_filename_to_store)
 
-        with zipfile.ZipFile(final_archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            if os.path.isdir(current_file):
+            with zipfile.ZipFile(final_archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, _, files in os.walk(current_file):
                     for file in files:
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, current_file)
                         zipf.write(file_path, arcname)
-            else:
-                zipf.write(current_file, os.path.basename(current_file))
+            file_to_upload = final_archive_path
+        else:
+            update_task_log(task_id, "日誌: 偵測到單一檔案，將保留原始檔名。")
+            final_filename_to_store = expected_filename
+            file_to_upload = current_file
 
-        with open(final_archive_path, 'rb') as f_in:
-            file_id = fs.put(f_in, filename=final_zip_name)
+        with open(file_to_upload, 'rb') as f_in:
+            file_id = fs.put(f_in, filename=final_filename_to_store)
 
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 'progress': 100, 
-            'result_file_id': str(file_id), 'result_filename': final_zip_name,
+            'result_file_id': str(file_id), 'result_filename': final_filename_to_store,
             'progress_text': '任務完成！'
         }})
         update_task_log(task_id, "✅ 解壓縮流程結束。")
