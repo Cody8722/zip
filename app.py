@@ -87,6 +87,8 @@ def parse_password_text(password_text):
             else:
                 password_list.append({'filename': fname.strip(), 'password': None if password == '(無密碼)' else password})
     return password_list
+
+# *** 關鍵修改：加入 Magic Number 檔案內容驗證 ***
 def validate_file(file, mode='compress'):
     if not file or not file.filename:
         raise ValueError("沒有選擇檔案或檔案名稱不可為空。")
@@ -95,10 +97,22 @@ def validate_file(file, mode='compress'):
     file.seek(0)
     if file_length > MAX_FILE_SIZE_BYTES:
         raise ValueError(f"檔案大小超過 {MAX_FILE_SIZE_MB}MB 的上限。")
+    
+    # 解壓縮時，進行更嚴格的檔案格式驗證
     if mode == 'decompress':
-        is_allowed = any(file.filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
-        if not is_allowed:
-            raise ValueError(f"不支援的檔案格式: {file.filename}")
+        filename_lower = file.filename.lower()
+        is_allowed_ext = any(filename_lower.endswith(ext) for ext in ALLOWED_EXTENSIONS)
+        if not is_allowed_ext:
+            raise ValueError(f"不支援的檔案格式: {filename_lower}")
+
+        # 內容掃描儀 (Magic Number Check)
+        header = file.read(8)
+        file.seek(0)
+
+        if filename_lower.endswith('.zip') and not header.startswith(b'PK\x03\x04'):
+            raise ValueError("檔案宣稱是 ZIP 檔，但內容格式不符，可能為惡意檔案。")
+        if filename_lower.endswith('.7z') and not header.startswith(b"7z\xbc\xaf'\x1c"):
+            raise ValueError("檔案宣稱是 7z 檔，但內容格式不符，可能為惡意檔案。")
 
 # --- 背景任務 ---
 def task_wrapper(func, *args, **kwargs):
@@ -506,3 +520,4 @@ def download_file(task_id):
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
