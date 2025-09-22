@@ -362,39 +362,313 @@
 
                 xhr.send(formData);
             }
-            
-            elements.compressForm.addEventListener('submit', (e) => { 
-                e.preventDefault(); 
-                const iterations = parseInt(elements.iterationsInput.value, 10);
-                if (isNaN(iterations) || iterations < 1 || iterations > 100) {
-                    elements.mainView.classList.add('hidden');
-                    elements.progressSection.classList.remove('hidden');
-                    elements.logBox.innerHTML = '<span style="color: #ef4444;">錯誤：壓縮次數必須是 1 到 100 之間的數字。</span>';
-                    elements.progressStatus.textContent = "輸入錯誤";
-                    elements.cancelButton.classList.add('hidden');
-                    elements.resultSection.classList.add('hidden');
-                    return;
+
+            async function checkStatus(taskId) {
+                try {
+                    const response = await fetch(`/status/${taskId}`);
+                    if (!response.ok) return; 
+                    const data = await response.json();
+                    
+                    const progress = data.progress || 0;
+                    elements.progressStatus.textContent = data.progress_text || "處理中...";
+                    elements.progressBar.style.width = `${progress}%`;
+                    elements.progressPercentage.textContent = `${progress}%`;
+                    elements.progressContainer.setAttribute("aria-valuenow", progress);
+                    elements.logBox.innerHTML = (data.logs || []).join("\n");
+                    elements.logBox.scrollTop = elements.logBox.scrollHeight;
+
+                    if (["完成", "失敗", "已取消"].includes(data.status)) {
+                        elements.resultTitle.textContent = `任務${data.status}！`;
+                        elements.resultSection.classList.remove("hidden");
+                        if (data.status === "完成") displayResults(data);
+                        elements.cancelButton.classList.add("hidden");
+                        currentTaskId = null;
+                    } else {
+                        setTimeout(() => checkStatus(taskId), 2000);
+                    }
+                } catch (error) {
+                    elements.logBox.innerHTML += "\n檢查狀態時發生網路錯誤。";
                 }
-                startTask('/compress', new FormData(elements.compressForm)); 
+            }
+
+            function displayResults(task) {
+                elements.resultButtons.innerHTML = "";
+                const isCompress = task.type === 'compress';
+                if (isCompress) saveToHistory(task);
+
+                if (task.result_file_id) {
+                    if (!isCompress) {
+                        elements.logBox.innerHTML += "\n\n日誌: 正在自動為您下載檔案...";
+                        window.location.href = `/download/${task._id}`;
+                    }
+                    
+                    const downloadBtn = document.createElement("a");
+                    downloadBtn.href = `/download/${task._id}`;
+                    downloadBtn.textContent = `下載檔案 (${task.result_filename})`;
+                    downloadBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? "bg-blue-600" : "bg-green-600"}`;
+                    elements.resultButtons.appendChild(downloadBtn);
+                }
+
+                if (isCompress) {
+                    updateStorageStats();
+                    if (task.password_file_content) {
+                        const shareBtn = document.createElement("button");
+                        shareBtn.innerHTML = "產生分享連結";
+                        shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200 dark:text-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800";
+                        shareBtn.onclick = (e) => displayShareLink(e, task);
+                        elements.resultButtons.appendChild(shareBtn);
+
+                        const qrBtn = document.createElement("button");
+                        qrBtn.innerHTML = '<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 018.5 2h3A1.5 1.5 0 0113 3.5v3A1.5 1.5 0 0111.5 8h-3A1.5 1.5 0 017 6.5v-3zM8.5 3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 3.5A1.5 1.5 0 0116.5 2h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V4h-.25A1.5 1.5 0 0115 3.5zM7 15a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0113 15v3a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 017 18v-3zM8.5 14a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM15 15a1.5 1.5 0 011.5-1.5h.25a.75.75 0 010 1.5H17v.25a.75.75 0 01-1.5 0V16h-.25A1.5 1.5 0 0115 15zM3.5 7A1.5 1.5 0 012 8.5v3A1.5 1.5 0 013.5 13h3A1.5 1.5 0 018 11.5v-3A1.5 1.5 0 016.5 7h-3zM3 8.5a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5h-3zM3.5 15A1.5 1.5 0 012 16.5v.25a.75.75 0 01-1.5 0V16a.75.75 0 01.75-.75h.25A1.5 1.5 0 013.5 15zm13.25.75a.75.75 0 00-1.5 0v.25A1.5 1.5 0 0113.5 18h-.25a.75.75 0 000 1.5h.25A2.75 2.75 0 0016 16.75v-.25a.75.75 0 00-.75-.75z"/></svg>顯示 QR Code';
+                        qrBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500";
+                        qrBtn.onclick = () => showQrCode(task._id);
+                        elements.resultButtons.appendChild(qrBtn);
+
+                        const deleteBtn = document.createElement("button");
+                        deleteBtn.innerHTML = '<svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.58.22-2.365.468a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193v-.443A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd" /></svg>永久刪除此檔案';
+                        deleteBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800";
+                        deleteBtn.onclick = () => promptDeleteFile(task._id, task.delete_token);
+                        elements.resultButtons.appendChild(deleteBtn);
+                    }
+                }
+            }
+
+            function saveToHistory(task) {
+                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                const newRecord = { id: task._id, name: task.params.raw_filename, date: new Date().toLocaleString(), finalName: task.result_filename, token: task.delete_token };
+                history.unshift(newRecord);
+                if (history.length > 50) history.pop();
+                localStorage.setItem('compressHistory', JSON.stringify(history));
+            }
+
+            function renderHistory() {
+                let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                elements.historyList.innerHTML = "";
+                if (history.length === 0) {
+                    elements.historyList.innerHTML = '<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>';
+                } else {
+                    history.forEach(item => {
+                        const div = document.createElement("div");
+                        div.className = "p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between";
+                        div.innerHTML = `<div><p class="font-medium text-gray-900 dark:text-white">${item.name}</p><p class="text-sm text-gray-500 dark:text-gray-400">${item.date}</p></div><div class="flex gap-2"><button data-id="${item.id}" class="history-share-btn text-sm text-blue-500 hover:underline">分享</button><button data-id="${item.id}" class="history-qr-btn text-sm text-green-500 hover:underline">QR</button><button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn text-sm text-red-500 hover:underline">刪除</button></div>`;
+                        elements.historyList.appendChild(div);
+                    });
+                }
+            }
+
+            elements.historyList.addEventListener("click", e => {
+                const target = e.target;
+                const taskId = target.dataset.id;
+                if (!taskId) return;
+                if (target.classList.contains("history-share-btn")) {
+                    const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
+                    navigator.clipboard.writeText(url).then(() => {
+                        target.textContent = "已複製!";
+                        setTimeout(() => target.textContent = "分享", 2000);
+                    });
+                } else if (target.classList.contains("history-qr-btn")) {
+                    showQrCode(taskId);
+                } else if (target.classList.contains("history-delete-btn")) {
+                    const token = target.dataset.token;
+                    promptDeleteFile(taskId, token);
+                }
             });
 
-            // ... (其餘事件監聽與之前版本幾乎相同) ...
+            function promptDeleteFile(taskId, token) {
+                taskToDelete = { id: taskId, token: token };
+                elements.deleteConfirmModal.classList.add('visible');
+            }
 
-            Object.keys(elements.tabs).forEach(mode => elements.tabs[mode].addEventListener('click', () => { /* ... */ }));
+            async function deleteFileFromServer(taskId, token) {
+                try {
+                    const response = await fetch(`/delete/${taskId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token: token })
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error);
+                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                    history = history.filter(item => item.id !== taskId);
+                    localStorage.setItem('compressHistory', JSON.stringify(history));
+                    renderHistory();
+                    updateStorageStats();
+                } catch (error) {
+                    alert(`刪除失敗: ${error.message}`);
+                }
+            }
+
+            function displayShareLink(e, task) {
+                const url = `${window.location.origin}${window.location.pathname}?share_id=${task._id}`;
+                const div = document.createElement("div");
+                div.className = "mt-4 p-2 bg-gray-100 rounded-md flex items-center gap-2 w-full dark:bg-gray-700";
+                const input = document.createElement("input");
+                input.type = "text";
+                input.value = url;
+                input.readOnly = true;
+                input.className = "flex-grow bg-transparent border-none text-sm p-1";
+                const button = document.createElement("button");
+                button.textContent = "複製";
+                button.className = "text-sm bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded-md dark:bg-gray-600 dark:hover:bg-gray-500";
+                button.onclick = () => {
+                    input.select();
+                    document.execCommand('copy');
+                    button.textContent = "已複製!";
+                    setTimeout(() => { button.textContent = "複製" }, 2000);
+                };
+                div.appendChild(input);
+                div.appendChild(button);
+                elements.resultButtons.appendChild(div);
+                e.target.closest('button').disabled = true;
+            }
+
+            function showQrCode(taskId) {
+                elements.qrCodeContainer.innerHTML = "";
+                const img = document.createElement('img');
+                img.src = `/qrcode/${taskId}`;
+                img.alt = "Share QR Code";
+                img.width = 250;
+                img.height = 250;
+                elements.qrCodeContainer.appendChild(img);
+                elements.qrCodeModal.classList.add('visible');
+            }
+
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+            }
+
+            async function updateStorageStats() {
+                try {
+                    const response = await fetch('/storage-stats');
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const used = data.used_space;
+                    const total = data.total_space;
+                    const percent = total > 0 ? (used / total) * 100 : 0;
+                    elements.storage.bar.style.width = `${percent}%`;
+                    elements.storage.text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
+                    elements.storage.bar.className = percent > 90 ? "bg-red-500 h-2 rounded-full" : percent > 70 ? "bg-yellow-500 h-2 rounded-full" : "bg-indigo-500 h-2 rounded-full";
+                } catch (e) {
+                    elements.storage.text.textContent = "無法取得資訊";
+                }
+            }
+
+            async function showShareView(shareId) {
+                elements.mainView.classList.add('hidden');
+                elements.shareView.classList.remove('hidden');
+                try {
+                    const response = await fetch(`/status/${shareId}`);
+                    if (!response.ok) throw new Error("找不到分享的檔案或連結已過期。");
+                    const data = await response.json();
+                    if (data.type !== 'compress' || !data.result_filename) throw new Error("此連結不是一個有效的分享連結。");
+                    elements.share.filename.textContent = `準備解壓縮檔案: ${data.result_filename}`;
+                    const needsMaster = data.password_file_content && data.password_file_content.includes("(特殊密碼層)");
+                    if (needsMaster) elements.share.masterPassPrompt.classList.remove('hidden');
+                    elements.share.startBtn.onclick = () => {
+                        const payload = JSON.stringify({ master_password: needsMaster ? elements.share.masterPassInput.value : null });
+                        startTask(`/start-shared-decompression/${shareId}`, payload);
+                    }
+                } catch (error) {
+                    elements.shareView.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg text-center dark:bg-red-900 dark:text-red-300">${error.message}</div>`;
+                }
+            }
+
+            function updateThemeIcons(isDark) {
+                elements.themeToggleDarkIcon.classList.toggle('hidden', !isDark);
+                elements.themeToggleLightIcon.classList.toggle('hidden', isDark);
+            }
+
+            // --- 初始執行 ---
+            updateThemeIcons(document.documentElement.classList.contains('dark'));
+            const shareId = new URLSearchParams(window.location.search).get('share_id');
+            if (shareId) {
+                showShareView(shareId);
+            }
+            updateStorageStats();
+            
+            // Event Listeners Registration
+            Object.keys(elements.tabs).forEach(mode => {
+                elements.tabs[mode].addEventListener('click', () => {
+                    Object.keys(elements.tabs).forEach(m => {
+                        elements.tabs[m].classList.toggle('active', m === mode);
+                        elements.sections[m].classList.toggle('hidden', m !== mode);
+                    });
+                    if (mode === 'history') renderHistory();
+                });
+            });
+
             setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress);
             setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress);
-            elements.clearHistoryBtn.addEventListener('click', async () => { /* ... */ });
-            elements.cleanupOrphansBtn.addEventListener('click', async () => { /* ... */ });
+
+            elements.clearHistoryBtn.addEventListener('click', async () => {
+                const history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                if (history.length === 0) return alert('沒有歷史紀錄可供清除。');
+                if (!confirm(`您確定要永久刪除 ${history.length} 筆歷史紀錄及其對應的雲端檔案嗎？\n\n此操作無法復原！`)) return;
+                const tasksToDelete = history.map(item => ({ id: item.id, token: item.token }));
+                try {
+                    const response = await fetch('/delete-batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tasks: tasksToDelete })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || '伺服器發生錯誤');
+                    alert(`清除完成！\n成功刪除 ${result.deleted_count} 個檔案。\n失敗 ${result.failed_count} 個。`);
+                    localStorage.removeItem('compressHistory');
+                    renderHistory();
+                    updateStorageStats();
+                } catch (error) {
+                    alert(`清除失敗: ${error.message}`);
+                }
+            });
+
+            elements.cleanupOrphansBtn.addEventListener('click', async () => {
+                const adminSecret = prompt("這是一個高風險操作，將會刪除所有雲端檔案。\n請輸入管理員密碼：");
+                if (!adminSecret) return;
+                try {
+                    const response = await fetch('/delete-all-files', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ admin_secret: adminSecret })
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || '伺服器發生錯誤');
+                    alert(`倉庫大掃除完成！\n已成功刪除 ${result.deleted_count} 個檔案。\n您的雲端儲存空間現在是乾淨的！`);
+                    localStorage.removeItem('compressHistory');
+                    renderHistory();
+                    updateStorageStats();
+                } catch (error) {
+                    alert(`操作失敗: ${error.message}`);
+                }
+            });
+            
             elements.cancelDeleteBtn.addEventListener('click', () => elements.deleteConfirmModal.classList.remove('visible'));
-            elements.confirmDeleteBtn.addEventListener('click', () => { /* ... */ });
+            elements.confirmDeleteBtn.addEventListener('click', () => {
+                if (taskToDelete) {
+                    deleteFileFromServer(taskToDelete.id, taskToDelete.token);
+                    taskToDelete = null;
+                }
+                elements.deleteConfirmModal.classList.remove('visible');
+            });
+            
             elements.useMasterPassCheckbox.addEventListener('change', () => elements.masterPassInputs.classList.toggle('hidden', !elements.useMasterPassCheckbox.checked));
             elements.decompressForm.addEventListener('submit', (e) => { e.preventDefault(); startTask('/decompress-manual', new FormData(elements.decompressForm)); });
-            elements.cancelButton.addEventListener('click', async () => { if (currentTaskId) await fetch(`/cancel/${currentTaskId}`, { method: 'POST' }); });
+            elements.cancelButton.addEventListener('click', async () => {
+                if (currentTaskId) {
+                    await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                }
+            });
             elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
-            elements.themeToggleBtn.addEventListener('click', () => { /* ... */ });
-
-            // ... (其餘 JavaScript 函式與之前版本相同) ...
-            
+            elements.themeToggleBtn.addEventListener('click', function() {
+                const isDark = document.documentElement.classList.toggle('dark');
+                localStorage.setItem('color-theme', isDark ? 'dark' : 'light');
+                updateThemeIcons(isDark);
+            });
         });
     </script>
 </body>
