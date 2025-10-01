@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理員儀表板 - 解壓縮日誌</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .log-item:not(:last-child) { border-bottom: 1px solid #e5e7eb; }
+        .dark .log-item:not(:last-child) { border-color: #374151; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300 transition-colors duration-300">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white">作戰情報室</h1>
+            <p class="text-gray-600 dark:text-gray-400 mt-2">監控所有已完成的解壓縮任務</p>
+        </header>
+
+        <main id="main-content" class="bg-white rounded-lg shadow-lg p-6 md:p-8 dark:bg-gray-800">
+            <div id="auth-section" class="max-w-sm mx-auto">
+                <h2 class="text-xl font-semibold text-center mb-4">請輸入管理員密碼</h2>
+                <div class="flex items-center gap-2">
+                    <input type="password" id="admin-secret" class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="您的密碼...">
+                    <button id="fetch-logs-btn" class="inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        驗證
+                    </button>
+                </div>
+            </div>
+
+            <div id="logs-section" class="hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-semibold">解壓縮活動日誌</h2>
+                    <button id="refresh-logs-btn" class="text-sm text-blue-500 hover:underline">
+                        重新整理
+                    </button>
+                </div>
+                <div id="logs-container" class="space-y-6">
+                    <!-- JavaScript will populate this -->
+                </div>
+                <p id="loading-message" class="text-center text-gray-500 mt-8">正在載入日誌...</p>
+                <p id="error-message" class="text-center text-red-500 mt-8 hidden"></p>
+                <p id="no-logs-message" class="text-center text-gray-500 mt-8 hidden">目前沒有任何已完成的解壓縮紀錄。</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const authSection = document.getElementById('auth-section');
+            const logsSection = document.getElementById('logs-section');
+            const secretInput = document.getElementById('admin-secret');
+            const fetchBtn = document.getElementById('fetch-logs-btn');
+            const refreshBtn = document.getElementById('refresh-logs-btn');
+            const logsContainer = document.getElementById('logs-container');
+            const loadingMsg = document.getElementById('loading-message');
+            const errorMsg = document.getElementById('error-message');
+            const noLogsMsg = document.getElementById('no-logs-message');
+
+            let currentSecret = null;
+
+            const fetchAndDisplayLogs = async (secret) => {
+                logsContainer.innerHTML = '';
+                loadingMsg.classList.remove('hidden');
+                errorMsg.classList.add('hidden');
+                noLogsMsg.classList.add('hidden');
+                
+                try {
+                    const response = await fetch(`/admin/api/decompression-logs?secret=${encodeURIComponent(secret)}`);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || `HTTP 錯誤: ${response.status}`);
+                    }
+                    const logs = await response.json();
+                    
+                    loadingMsg.classList.add('hidden');
+                    
+                    if (logs.length === 0) {
+                        noLogsMsg.classList.remove('hidden');
+                        return;
+                    }
+
+                    logs.forEach(ipGroup => {
+                        const ipCard = document.createElement('div');
+                        ipCard.className = 'bg-gray-50 dark:bg-gray-700 rounded-lg p-4 shadow';
+
+                        const header = document.createElement('div');
+                        header.className = 'flex justify-between items-center mb-3';
+                        header.innerHTML = `
+                            <div>
+                                <h3 class="font-bold text-lg text-blue-600 dark:text-blue-400">${ipGroup.ip_address}</h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">總計 ${ipGroup.count} 次解壓縮 | 最近活動: ${new Date(ipGroup.last_activity).toLocaleString()}</p>
+                            </div>
+                        `;
+                        ipCard.appendChild(header);
+
+                        const fileList = document.createElement('div');
+                        ipGroup.files.forEach(file => {
+                            const fileItem = document.createElement('div');
+                            fileItem.className = 'log-item py-2 px-1 text-sm';
+                            const originalName = file.original_filename ? ` (原始檔名: ${file.original_filename})` : '';
+                            fileItem.innerHTML = `
+                                <span class="font-mono bg-gray-200 dark:bg-gray-600 px-1 rounded">${new Date(file.timestamp).toLocaleString()}</span>
+                                <span class="ml-2">${file.filename}${originalName}</span>
+                            `;
+                            fileList.appendChild(fileItem);
+                        });
+                        ipCard.appendChild(fileList);
+                        logsContainer.appendChild(ipCard);
+                    });
+
+                } catch (error) {
+                    loadingMsg.classList.add('hidden');
+                    errorMsg.textContent = `載入失敗: ${error.message}`;
+                    errorMsg.classList.remove('hidden');
+                }
+            };
+
+            const handleAuth = () => {
+                const secret = secretInput.value;
+                if (!secret) {
+                    alert('請輸入密碼！');
+                    return;
+                }
+                currentSecret = secret;
+                authSection.classList.add('hidden');
+                logsSection.classList.remove('hidden');
+                fetchAndDisplayLogs(currentSecret);
+            };
+            
+            fetchBtn.addEventListener('click', handleAuth);
+            secretInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleAuth();
+                }
+            });
+
+            refreshBtn.addEventListener('click', () => {
+                if (currentSecret) {
+                    fetchAndDisplayLogs(currentSecret);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
