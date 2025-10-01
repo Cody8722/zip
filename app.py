@@ -333,13 +333,23 @@ def decompress_manual_route():
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
         file = request.files.get('file')
         validate_file(file, mode='decompress')
+        
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+
         params = { 
             'password_list': parse_password_text(request.form.get('passwords', '')), 
             'master_pass': request.form.get('master_password'), 
             'expected_filename': file.filename 
         }
         if not params['password_list']: raise ValueError("無法解析您提供的密碼表。")
-        task = {'type': 'decompress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+        
+        task = {
+            'type': 'decompress', 
+            'status': 'pending', 
+            'params': params, 
+            'created_at': datetime.utcnow(),
+            'ip_address': ip_address
+        }
         task_id = tasks_collection.insert_one(task).inserted_id
         filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
         file.save(filepath)
@@ -359,6 +369,9 @@ def start_shared_decompression(compress_task_id):
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
         original_task = tasks_collection.find_one({'_id': ObjectId(compress_task_id)})
         if not original_task or 'result_file_id' not in original_task: raise ValueError("找不到原始壓縮任務或檔案可能已被刪除。")
+        
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+
         filepath = os.path.join(UPLOAD_FOLDER, f"share_{secure_filename(original_task['result_filename'])}")
         grid_out = fs.get(ObjectId(original_task['result_file_id']))
         with open(filepath, 'wb') as f_out:
@@ -368,13 +381,66 @@ def start_shared_decompression(compress_task_id):
             'original_file': filepath, 'password_list': parse_password_text(original_task.get('password_file_content', '')),
             'master_pass': request.get_json().get('master_password'), 'expected_filename': original_task.get('params', {}).get('raw_filename')
         }
-        new_task = {'type': 'decompress', 'status': '處理中', 'params': params, 'created_at': datetime.utcnow()}
+        new_task = {
+            'type': 'decompress', 
+            'status': '處理中', 
+            'params': params, 
+            'created_at': datetime.utcnow(),
+            'ip_address': ip_address
+        }
         new_task_id = tasks_collection.insert_one(new_task).inserted_id
         tasks_collection.update_one({'_id': new_task_id}, {'$set': {'progress_text': '準備開始...'}})
         executor.submit(task_wrapper, decompression_worker, str(new_task_id))
         return jsonify({'task_id': str(new_task_id)})
     except Exception as e:
         return handle_route_exception(e, 'start_shared_decompression')
+
+@app.route('/admin')
+def admin_dashboard():
+    return render_template('admin.html')
+
+@app.route('/admin/api/decompression-logs')
+def get_decompression_logs():
+    try:
+        if not ADMIN_SECRET:
+            return jsonify({'error': '伺服器未設定管理員密碼'}), 500
+        
+        provided_secret = request.args.get('secret')
+        if not provided_secret:
+            return jsonify({'error': '缺少管理員密碼'}), 401
+        
+        if not secrets.compare_digest(provided_secret, ADMIN_SECRET):
+            return jsonify({'error': '管理員密碼錯誤'}), 403
+
+        pipeline = [
+            {'$match': {'type': 'decompress', 'status': '完成', 'ip_address': {'$exists': True}}},
+            {'$sort': {'created_at': -1}},
+            {'$group': {
+                '_id': '$ip_address',
+                'count': {'$sum': 1},
+                'files': {
+                    '$push': {
+                        'filename': '$result_filename',
+                        'original_filename': '$params.expected_filename',
+                        'timestamp': '$created_at'
+                    }
+                },
+                'last_activity': {'$first': '$created_at'}
+            }},
+            {'$sort': {'last_activity': -1}},
+            {'$project': {
+                'ip_address': '$_id',
+                'count': 1,
+                'files': 1,
+                'last_activity': 1,
+                '_id': 0
+            }}
+        ]
+        logs = list(tasks_collection.aggregate(pipeline))
+        return jsonify(logs)
+
+    except Exception as e:
+        return handle_route_exception(e, 'get_decompression_logs')
 
 @app.route('/health')
 def health_check():
