@@ -10,7 +10,7 @@ import re
 import threading
 import hashlib
 import base64
-from flask import Flask, request, jsonify, send_from_directory, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file
 from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, timedelta
