@@ -305,8 +305,12 @@ def compress_route():
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
         file = request.files.get('file')
         validate_file(file, mode='compress')
+        
+        # *** 關鍵修正：根據您的指南，新增 expected_filename 欄位 ***
         params = {
-            'raw_filename': file.filename, 'iterations': int(request.form.get('iterations', 5)),
+            'raw_filename': file.filename,
+            'expected_filename': file.filename, # <-- THE FIX
+            'iterations': int(request.form.get('iterations', 5)),
             'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
             'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
@@ -314,6 +318,7 @@ def compress_route():
             'master_pass': request.form.get('master_password'),
             'master_pass_interval': int(request.form.get('master_password_interval', '10'))
         }
+        
         task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
         task_id = tasks_collection.insert_one(task).inserted_id
         filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
