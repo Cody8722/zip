@@ -95,6 +95,7 @@
             word-wrap: break-word;
         }
         .debug-log-error { color: #ff4d4d; }
+
         .hidden {
             display: none !important;
         }
@@ -329,8 +330,14 @@
         });
         document.addEventListener('mousemove', (e) => {
             if (isDragging) {
-                debugConsole.style.left = `${e.clientX - offsetX}px`;
-                debugConsole.style.top = `${e.clientY - offsetY}px`;
+                const newLeft = e.clientX - offsetX;
+                const newTop = e.clientY - offsetY;
+                
+                const maxLeft = window.innerWidth - debugConsole.offsetWidth;
+                const maxTop = window.innerHeight - debugConsole.offsetHeight;
+                
+                debugConsole.style.left = `${Math.max(0, Math.min(newLeft, maxLeft))}px`;
+                debugConsole.style.top = `${Math.max(0, Math.min(newTop, maxTop))}px`;
             }
         });
         document.addEventListener('mouseup', () => {
@@ -483,7 +490,7 @@
                                 throw new Error(data.error || `伺服器錯誤 (狀態碼: ${xhr.status})`);
                             }
                         } catch (e) {
-                            writeDebugLog(`處理 XHR 回應時發生錯誤: ${e.message}\n${e.stack}`, true);
+                            writeDebugLog(`處理 XHR 回應時發生錯誤: ${e.message}\n${e.stack}`, null, true);
                             elements.logBox.innerHTML = `<span style="color: #ef4444;">處理回應時發生錯誤: ${e.message}</span>`;
                             elements.progressStatus.textContent = "失敗";
                             elements.cancelButton.classList.add('hidden');
@@ -491,7 +498,7 @@
                     };
                     
                     xhr.onerror = () => {
-                        writeDebugLog("XHR: 發生網路錯誤。", true);
+                        writeDebugLog("XHR: 發生網路錯誤。", null, true);
                         elements.uploadProgressContainer.classList.add('hidden');
                         elements.logBox.innerHTML = `<span style="color: #ef4444;">上傳時發生網路錯誤。</span>`;
                         elements.progressStatus.textContent = "失敗";
@@ -509,7 +516,7 @@
                 
                 async function checkStatus(taskId) {
                     if (!taskId) {
-                        writeDebugLog("checkStatus 被呼叫，但 taskId 為 null。", true);
+                        writeDebugLog("checkStatus 被呼叫，但 taskId 為 null。", null, true);
                         return;
                     }
                     writeDebugLog(`Polling status for task: ${taskId}`);
@@ -541,7 +548,7 @@
                             setTimeout(() => checkStatus(taskId), 2000);
                         }
                     } catch (error) {
-                        writeDebugLog(`檢查狀態時發生錯誤: ${error.message}\n${error.stack}`, true);
+                        writeDebugLog(`檢查狀態時發生錯誤: ${error.message}\n${error.stack}`, null, true);
                         elements.logBox.innerHTML += "\n檢查狀態時發生網路錯誤。";
                     }
                 }
@@ -618,7 +625,7 @@
                         startTask('/compress', formData);
 
                     } catch(error) {
-                        writeDebugLog(`壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, true);
+                        writeDebugLog(`壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, null, true);
                         alert(`輸入錯誤：${error.message}`);
                     }
                 });
@@ -641,7 +648,7 @@
                          }
                         startTask('/decompress-manual', new FormData(elements.decompressForm));
                      } catch(error) {
-                         writeDebugLog(`解壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, true);
+                         writeDebugLog(`解壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, null, true);
                          alert(`輸入錯誤：${error.message}`);
                      }
                 });
@@ -773,22 +780,21 @@
                 writeDebugLog("應用程式初始化完成。");
                 
             } catch (fatalError) {
-                writeDebugLog("!!!!!! 捕獲到導致應用程式崩潰的致命錯誤 !!!!!!", true);
-                writeDebugLog(fatalError.stack, true);
-                const body = document.querySelector('body');
-                body.innerHTML = `<div style="padding: 20px; text-align: center; color: red;"><h1>應用程式發生致命錯誤</h1><p>請檢查「黑盒子」視窗以獲取詳細的錯誤資訊，並將其回報給開發者。</p><pre style="text-align: left; background: #333; padding: 10px; border-radius: 5px; color: white; margin-top: 20px;">${fatalError.stack}</pre></div>`;
+                writeDebugLog("!!!!!! 捕獲到導致應用程式崩潰的致命錯誤 !!!!!!", null, true);
+                writeDebugLog(fatalError.stack, null, true);
+                
+                const mainContentContainer = document.querySelector('main');
+                if(mainContentContainer){
+                    mainContentContainer.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg"><h2 class="font-bold">致命錯誤</h2><p>應用程式發生無法恢復的錯誤。請將黑盒子中的資訊回報給開發者。</p></div>`;
+                }
             }
         });
         
-        // *** 關鍵修正：安裝「智慧門禁感應器」 ***
         window.addEventListener('pageshow', function(event) {
-            // event.persisted 為 true 代表頁面是從 bfcache (瀏覽器的快取記憶) 中恢復的
-            // 我們在每次頁面顯示時，都重新檢查一次 debug 狀態，確保 UI 正確
             if(isDebugMode) writeDebugLog(`"pageshow" 事件觸發。 (從快取恢復: ${event.persisted})`);
             initializeDebugMode();
         });
 
-        // *** 新增：監聽瀏覽器的前進/後退事件 ***
         window.addEventListener('popstate', function(event) {
             if(isDebugMode) writeDebugLog(`"popstate" 事件觸發，重新檢查偵錯狀態。`);
             initializeDebugMode();
