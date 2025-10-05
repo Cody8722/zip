@@ -346,6 +346,12 @@
                 writeDebugLog("偵錯模式已啟動。");
             }
 
+            // *** 關鍵修正：清理 URL，移除 debug 參數 ***
+            if (!urlParams.has('share_id')) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                writeDebugLog("URL 已清理，偵錯模式在下次重新整理前將不會自動啟動。");
+            }
+
             try {
                 const elements = {
                     mainView: document.getElementById('main-view'),
@@ -622,7 +628,7 @@
                         if (!fileInput.files || fileInput.files.length === 0) {
                             throw new Error('請先選擇一個要解壓縮的檔案。');
                         }
-                         if (document.getElementById('passwords').value.trim() === '') { // Direct access
+                         if (document.getElementById('passwords').value.trim() === '') {
                              throw new Error('請貼上密碼表內容。');
                          }
                         startTask('/decompress-manual', new FormData(elements.decompressForm));
