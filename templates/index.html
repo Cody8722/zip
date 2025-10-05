@@ -353,7 +353,7 @@
             if(isDebugMode) writeDebugLog("偵錯模式已啟動 (from DOMContentLoaded)。");
 
             const urlParams = new URLSearchParams(window.location.search);
-            if (!urlParams.has('share_id') && window.location.search !== "") {
+            if (!urlParams.has('share_id') && !urlParams.has('debug') && window.location.search !== "") {
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
 
