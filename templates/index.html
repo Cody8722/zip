@@ -336,20 +336,25 @@
         });
         debugClearBtn.addEventListener('click', () => { debugOutput.innerHTML = ''; });
 
-        // --- Main Application Logic ---
-        document.addEventListener('DOMContentLoaded', () => {
-            
+        function initializeDebugMode() {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.get('debug') === 'true') {
                 isDebugMode = true;
                 debugConsole.classList.remove('hidden');
-                writeDebugLog("偵錯模式已啟動。");
+            } else {
+                isDebugMode = false;
+                debugConsole.classList.add('hidden');
             }
+        }
+        
+        // --- Main Application Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeDebugMode();
+            if(isDebugMode) writeDebugLog("偵錯模式已啟動 (from DOMContentLoaded)。");
 
-            // *** 關鍵修正：清理 URL，移除 debug 參數 ***
-            if (!urlParams.has('share_id')) {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (!urlParams.has('share_id') && window.location.search !== "") {
                 window.history.replaceState({}, document.title, window.location.pathname);
-                writeDebugLog("URL 已清理，偵錯模式在下次重新整理前將不會自動啟動。");
             }
 
             try {
@@ -770,6 +775,20 @@
                 const body = document.querySelector('body');
                 body.innerHTML = `<div style="padding: 20px; text-align: center; color: red;"><h1>應用程式發生致命錯誤</h1><p>請檢查「黑盒子」視窗以獲取詳細的錯誤資訊，並將其回報給開發者。</p><pre style="text-align: left; background: #333; padding: 10px; border-radius: 5px; color: white; margin-top: 20px;">${fatalError.stack}</pre></div>`;
             }
+        });
+        
+        // *** 關鍵修正：安裝「智慧門禁感應器」 ***
+        window.addEventListener('pageshow', function(event) {
+            // event.persisted 為 true 代表頁面是從 bfcache (瀏覽器的快取記憶) 中恢復的
+            // 我們在每次頁面顯示時，都重新檢查一次 debug 狀態，確保 UI 正確
+            if(isDebugMode) writeDebugLog(`"pageshow" 事件觸發。 (從快取恢復: ${event.persisted})`);
+            initializeDebugMode();
+        });
+
+        // *** 新增：監聽瀏覽器的前進/後退事件 ***
+        window.addEventListener('popstate', function(event) {
+            if(isDebugMode) writeDebugLog(`"popstate" 事件觸發，重新檢查偵錯狀態。`);
+            initializeDebugMode();
         });
     </script>
 </body>
