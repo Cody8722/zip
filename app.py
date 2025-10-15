@@ -305,7 +305,10 @@ def compress_route():
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
         file = request.files.get('file')
         validate_file(file, mode='compress')
-        
+
+        # 取得來源 IP 位址
+        ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
+
         # *** 關鍵修正：根據您的指南，新增 expected_filename 欄位 ***
         params = {
             'raw_filename': file.filename,
@@ -318,8 +321,8 @@ def compress_route():
             'master_pass': request.form.get('master_password'),
             'master_pass_interval': int(request.form.get('master_password_interval', '10'))
         }
-        
-        task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow()}
+
+        task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow(), 'ip_address': ip_address}
         task_id = tasks_collection.insert_one(task).inserted_id
         filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
         file.save(filepath)
@@ -469,10 +472,48 @@ def health_check():
 def storage_stats():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
+
+        # 計算總使用空間
         pipeline = [{'$group': {'_id': None, 'total_size': {'$sum': '$length'}}}]
         result = list(db['fs.files'].aggregate(pipeline))
-        used_space = result[0]['total_size'] if result else 0
-        return jsonify({'used_space': used_space, 'total_space': 512 * 1024 * 1024})
+        used_space_bytes = result[0]['total_size'] if result else 0
+
+        # 計算檔案數量
+        file_count = db['fs.files'].count_documents({})
+
+        # MongoDB 免費版限制
+        total_space_bytes = 512 * 1024 * 1024  # 512 MB
+
+        # 計算使用百分比
+        usage_percent = round((used_space_bytes / total_space_bytes) * 100, 2)
+
+        # 可用空間
+        available_bytes = total_space_bytes - used_space_bytes
+
+        # 判斷警告等級
+        warning_level = 'normal'  # normal / warning / danger / full
+        can_upload = True
+
+        if usage_percent >= 100:
+            warning_level = 'full'
+            can_upload = False
+        elif usage_percent >= 95:
+            warning_level = 'danger'
+        elif usage_percent >= 80:
+            warning_level = 'warning'
+
+        return jsonify({
+            'used_space_bytes': used_space_bytes,
+            'used_space_mb': round(used_space_bytes / (1024 * 1024), 2),
+            'total_space_bytes': total_space_bytes,
+            'total_space_mb': 512,
+            'available_bytes': available_bytes,
+            'available_mb': round(available_bytes / (1024 * 1024), 2),
+            'usage_percent': usage_percent,
+            'file_count': file_count,
+            'warning_level': warning_level,
+            'can_upload': can_upload
+        })
     except Exception as e:
         return handle_route_exception(e, 'storage_stats')
 
