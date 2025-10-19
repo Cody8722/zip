@@ -1,0 +1,7 @@
+Flask
+py7zr
+gunicorn
+pymongo
+dnspython
+cryptography
+qrcode[pil]
