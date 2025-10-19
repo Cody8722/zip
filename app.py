@@ -298,7 +298,6 @@ def index(): return render_template('index.html')
 
 @app.route('/compress', methods=['POST'])
 def compress_route():
-    global active_task_count
     if active_task_count >= MAX_CONCURRENT_TASKS:
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
@@ -334,7 +333,6 @@ def compress_route():
 
 @app.route('/decompress-manual', methods=['POST'])
 def decompress_manual_route():
-    global active_task_count
     if active_task_count >= MAX_CONCURRENT_TASKS:
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
@@ -370,7 +368,6 @@ def decompress_manual_route():
 
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
 def start_shared_decompression(compress_task_id):
-    global active_task_count
     if active_task_count >= MAX_CONCURRENT_TASKS:
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
