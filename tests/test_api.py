@@ -17,6 +17,8 @@ from app import app
 def client():
     """创建测试客户端"""
     app.config['TESTING'] = True
+    # 禁用 strict_slashes 以避免 301 重定向
+    app.url_map.strict_slashes = False
     with app.test_client() as client:
         yield client
 
