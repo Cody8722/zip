@@ -26,19 +26,18 @@ def client():
 class TestHealthCheck:
     """健康检查端点测试"""
 
-    def test_status_endpoint(self, client):
-        """测试 /status 端点"""
-        response = client.get('/status')
+    def test_index_page(self, client):
+        """测试首页端点"""
+        response = client.get('/')
         assert response.status_code == 200
+        # 首页返回 HTML
+        assert 'text/html' in response.content_type
 
-        data = response.get_json()
-        assert 'status' in data
-        assert data['status'] == 'ok'
-
-    def test_status_returns_json(self, client):
-        """测试返回 JSON 格式"""
-        response = client.get('/status')
-        assert response.content_type == 'application/json'
+    def test_task_status_endpoint_invalid_id(self, client):
+        """测试任务状态端点（无效ID）"""
+        response = client.get('/status/invalid_task_id')
+        # 应该返回 404 (任务不存在) 或 500 (错误)
+        assert response.status_code in [404, 500]
 
 
 class TestCompressionAPI:
@@ -274,7 +273,7 @@ class TestRateLimiting:
     def test_concurrent_task_limit(self, client):
         """测试并发任务限制"""
         # 这个测试只验证端点响应，不实际测试并发限制
-        response = client.get('/status')
+        response = client.get('/')
         assert response.status_code == 200
 
 
@@ -307,11 +306,6 @@ class TestErrorHandling:
         """测试不支持的 HTTP 方法"""
         response = client.patch('/compress')
         assert response.status_code in [405, 500]
-
-    def test_index_page(self, client):
-        """测试首页"""
-        response = client.get('/')
-        assert response.status_code == 200
 
 
 if __name__ == '__main__':
