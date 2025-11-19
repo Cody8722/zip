@@ -22,5 +22,5 @@ RUN mkdir -p /tmp/compressor_uploads /tmp/compressor_outputs && \
 USER appuser
 
 # 步驟 8: 告訴容器，當它啟動時，應該執行什麼指令來開啟我們的網站
-CMD ["gunicorn", "app:app", "--timeout", "120"]
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "300", "--graceful-timeout", "120", "--keep-alive", "75"]
 
