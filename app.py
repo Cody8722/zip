@@ -156,16 +156,20 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
                 update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
             format_name = params['formats'][(i - 1) % len(params['formats'])]
-            output_filename = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_layer_{i}{formats[format_name]}")
+
+            # 生成隨機檔名（16字符）
+            random_filename = secrets.token_hex(8) + formats[format_name]
+            output_filename = os.path.join(OUTPUT_FOLDER, random_filename)
+
             password = None; log_pwd = "(無密碼)"
             if params['use_master_pass'] and i % params['master_pass_interval'] == 0:
                 password = params['master_pass']; log_pwd = "(特殊密碼層)"
             elif (params['encrypt_odd'] and i % 2 != 0) or (not params['encrypt_odd'] and i in params['manual_layers']):
                 if format_name in ('zip', '7z'):
-                    # 使用檔案名稱和任務鹽生成 SHA-256 密碼
-                    password = generate_password(os.path.basename(output_filename), task_salt)
+                    # 使用隨機檔名和任務鹽生成 SHA-256 密碼
+                    password = generate_password(random_filename, task_salt)
                     log_pwd = password
-            password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
+            password_file_content += f"第 {i} 層 ({random_filename}): {log_pwd}\n"
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
             if format_name in ('zip', '7z'):
