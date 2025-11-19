@@ -1121,10 +1121,10 @@
                         localStorage.removeItem('compressHistory');
                         renderHistory();
                         updateStorageStats();
-                        alert(`倉庫大掃除完成！已刪除 ${result.deleted_count} 個檔案。`);
+                        Toast.success(`倉庫大掃除完成！已刪除 ${result.deleted_count} 個檔案`);
                     } catch (error) {
                         writeDebugLog(`倉庫大掃除失敗: ${error.message}`, null, true);
-                        alert(`操作失敗: ${error.message}`);
+                        Toast.error(`操作失敗: ${error.message}`);
                     }
                 });
 
