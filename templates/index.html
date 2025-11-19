@@ -750,7 +750,7 @@
                 let currentTaskId = null;
                 let currentConfirmAction = null;
 
-                function setupDropZone(dropZone, fileInput, fileNameDisplay) {
+                function setupDropZone(dropZone, fileInput, fileNameDisplay, fileInfoId) {
                     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
                     ['dragleave', 'dragend'].forEach(type => { dropZone.addEventListener(type, () => dropZone.classList.remove('drag-over')); });
                     dropZone.addEventListener('drop', e => {
