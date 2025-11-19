@@ -597,45 +597,7 @@ def compress_route():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
 
-        # 調試：檢查請求內容
-        logging.info(f"=== 接收到壓縮請求 ===")
-        logging.info(f"Content-Type: {request.content_type}")
-        logging.info(f"Content-Length: {request.headers.get('Content-Length', 'N/A')}")
-        logging.info(f"Transfer-Encoding: {request.headers.get('Transfer-Encoding', 'N/A')}")
-        logging.info(f"X-Forwarded-For: {request.headers.get('X-Forwarded-For', 'N/A')}")
-
-        # 檢查原始數據是否存在
-        try:
-            # 先偷看一下原始數據的開頭（不消耗 stream）
-            if hasattr(request, 'stream') and request.stream:
-                logging.info(f"request.stream 存在")
-
-            # 檢查 environ 中的 wsgi.input
-            if 'wsgi.input' in request.environ:
-                logging.info(f"wsgi.input 存在於 environ 中")
-                wsgi_input = request.environ['wsgi.input']
-                logging.info(f"wsgi.input 類型: {type(wsgi_input)}")
-        except Exception as e:
-            logging.warning(f"檢查原始數據時發生錯誤: {e}")
-
-        logging.info(f"開始解析 multipart 數據...")
-        try:
-            # 先看看 request.files 和 request.form 裡有什麼
-            logging.info(f"request.files keys: {list(request.files.keys())}")
-            logging.info(f"request.form keys: {list(request.form.keys())}")
-
-            # 如果 files 裡有東西，列出所有 keys
-            if request.files:
-                for key in request.files.keys():
-                    logging.info(f"  - files['{key}']: {request.files[key]}")
-
-            file = request.files.get('file')
-            logging.info(f"✅ 成功獲取檔案物件: {file}")
-            if file:
-                logging.info(f"檔案名稱: {file.filename}, 大小: {request.content_length} bytes")
-        except Exception as parse_error:
-            logging.error(f"❌ 解析 multipart 時發生錯誤: {parse_error}", exc_info=True)
-            raise ValueError(f"無法解析上傳的檔案數據: {str(parse_error)}")
+        file = request.files.get('file')
 
         validate_file(file, mode='compress')
 
