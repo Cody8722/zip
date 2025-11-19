@@ -26,7 +26,7 @@ from email.message import EmailMessage
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB 最大請求大小
+# 移除 MAX_CONTENT_LENGTH 限制，讓 gunicorn 和檔案驗證來處理大小
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
