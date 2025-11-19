@@ -8,6 +8,8 @@ import re
 import threading
 import hashlib
 import base64
+import atexit
+import signal
 from flask import Flask, request, jsonify, render_template, send_file
 from pymongo import MongoClient
 from bson import ObjectId
@@ -66,6 +68,37 @@ try:
     fs = GridFS(db)
 except Exception as e:
     logging.error(f"❌ 應用程式啟動失敗: {e}")
+
+# --- 清理函數 ---
+def cleanup_on_exit():
+    """應用程式退出時清理資源"""
+    logging.info("正在清理資源...")
+    try:
+        # 等待所有任務完成（最多等待 30 秒）
+        executor.shutdown(wait=True, timeout=30)
+        logging.info("✅ 線程池已清理")
+    except Exception as e:
+        logging.error(f"清理線程池時發生錯誤: {e}")
+
+    try:
+        # 關閉 MongoDB 連接
+        if client:
+            client.close()
+            logging.info("✅ MongoDB 連接已關閉")
+    except Exception as e:
+        logging.error(f"關閉 MongoDB 連接時發生錯誤: {e}")
+
+# 註冊清理函數
+atexit.register(cleanup_on_exit)
+
+# 處理信號（Ctrl+C 或 kill）
+def signal_handler(signum, frame):
+    logging.info(f"收到信號 {signum}，正在優雅地關閉...")
+    cleanup_on_exit()
+    exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # --- 通用輔助函式 ---
 def generate_password(filename, salt, length=16):
@@ -174,14 +207,36 @@ def validate_file(file, mode='compress'):
         if not is_allowed_ext:
             raise ValueError(f"不支援的檔案格式: {filename_lower}")
 
-        header = file.read(8)
+        # 讀取更多 bytes 以支援 tar 格式驗證
+        header = file.read(512)  # tar header 是 512 bytes
         file.seek(0)
-        
+
+        # ZIP 格式驗證
         zip_magic_numbers = [b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08']
         if filename_lower.endswith('.zip') and not any(header.startswith(sig) for sig in zip_magic_numbers):
             raise ValueError("檔案宣稱是 ZIP 檔，但內容格式不符，可能為惡意檔案。")
+
+        # 7Z 格式驗證
         if filename_lower.endswith('.7z') and not header.startswith(b"7z\xbc\xaf'\x1c"):
             raise ValueError("檔案宣稱是 7z 檔，但內容格式不符，可能為惡意檔案。")
+
+        # TAR 格式驗證（檢查 magic number "ustar" 在偏移量 257）
+        if filename_lower.endswith('.tar') or filename_lower.endswith(('.gz', '.bz2', '.xz')):
+            # .tar 檔案在偏移量 257 處有 "ustar" 標記
+            # .gz 檔案以 \x1f\x8b 開頭（gzip magic number）
+            # .bz2 檔案以 "BZ" 開頭
+            # .xz 檔案以 \xfd\x37\x7a\x58\x5a\x00 開頭
+            if filename_lower.endswith('.gz') and not header.startswith(b'\x1f\x8b'):
+                raise ValueError("檔案宣稱是 GZIP 檔，但內容格式不符，可能為惡意檔案。")
+            if filename_lower.endswith('.bz2') and not header.startswith(b'BZ'):
+                raise ValueError("檔案宣稱是 BZIP2 檔，但內容格式不符，可能為惡意檔案。")
+            if filename_lower.endswith('.xz') and not header.startswith(b'\xfd\x37\x7a\x58\x5a\x00'):
+                raise ValueError("檔案宣稱是 XZ 檔，但內容格式不符，可能為惡意檔案。")
+            if filename_lower.endswith('.tar') and len(header) >= 262:
+                # TAR 檔案的 magic number 在偏移量 257
+                tar_magic = header[257:262]
+                if tar_magic not in [b'ustar', b'ustar\x00']:
+                    raise ValueError("檔案宣稱是 TAR 檔，但內容格式不符，可能為惡意檔案。")
 
 # --- 背景任務 ---
 def task_wrapper(func, *args, **kwargs):
@@ -201,6 +256,8 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     params = task['params']; original_file = params['original_file']
     # 追蹤所有生成的檔案以便失敗時清理
     generated_files = []
+    # 用於檢查取消狀態的標誌（避免每次循環都查詢資料庫）
+    cancel_check_interval = 5  # 每 5 層檢查一次
     try:
         iterations = params['iterations']
         password_file_content = "--- 壓縮密碼表 ---\n"
@@ -210,14 +267,35 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
         for i in range(1, iterations + 1):
-            if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
-                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
+            # 每隔幾層檢查一次取消狀態，避免頻繁查詢資料庫
+            if i % cancel_check_interval == 0 or i == 1:
+                task_status = safe_db_operation(
+                    lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
+                    "檢查取消狀態"
+                )
+                if task_status and task_status.get('cancel_requested'):
+                    update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
+                    safe_db_operation(
+                        lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
+                        "設定取消狀態"
+                    )
+                    # 清理已生成的中間檔案
+                    for temp_file in generated_files:
+                        if os.path.exists(temp_file):
+                            try:
+                                os.remove(temp_file)
+                                logging.info(f"已清理取消任務的中間檔案: {temp_file}")
+                            except Exception as e:
+                                logging.error(f"清理中間檔案失敗: {e}")
+                    return
             format_name = params['formats'][(i - 1) % len(params['formats'])]
 
             # 最後一層使用原始檔名，其他層使用隨機檔名
             if i == iterations:
                 # 最後一層：使用原始檔名（不含原副檔名）+ 短隨機碼 + 新格式副檔名
-                base_name = os.path.splitext(params['raw_filename'])[0]
+                # 使用 secure_filename 清理檔名，防止路徑穿越
+                safe_raw_filename = secure_filename(params['raw_filename'])
+                base_name = os.path.splitext(safe_raw_filename)[0]
                 # 加上 4 字符隨機碼避免檔名衝突
                 unique_suffix = secrets.token_hex(2)
                 final_filename = f"{base_name}_{unique_suffix}{formats[format_name]}"
@@ -307,6 +385,10 @@ def decompression_worker(task_id_str):
     if not task: return
     params = task['params']; original_file = params['original_file']
     output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
+    # 用於檢查取消狀態的標誌
+    cancel_check_interval = 5
+    # 追蹤已處理的中間檔案
+    processed_files = []
     try:
         password_list = params['password_list']
         master_pass = params.get('master_pass')
@@ -314,8 +396,27 @@ def decompression_worker(task_id_str):
         current_file = original_file; total_layers = len(password_list)
         total_uncompressed_size = 0
         for i, layer_info in enumerate(reversed(password_list)):
-            if tasks_collection.find_one({'_id': task_id}).get('cancel_requested'):
-                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。"); return
+            # 優化取消檢查頻率
+            if i % cancel_check_interval == 0 or i == 0:
+                task_status = safe_db_operation(
+                    lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
+                    "檢查取消狀態"
+                )
+                if task_status and task_status.get('cancel_requested'):
+                    update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
+                    safe_db_operation(
+                        lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
+                        "設定取消狀態"
+                    )
+                    # 清理已處理的中間檔案
+                    for temp_file in processed_files:
+                        if os.path.exists(temp_file):
+                            try:
+                                os.remove(temp_file)
+                                logging.info(f"已清理取消任務的中間檔案: {temp_file}")
+                            except Exception as e:
+                                logging.error(f"清理中間檔案失敗: {e}")
+                    return
             layer_num = total_layers - i
             password = layer_info['password']
             if password == 'MASTER_PASSWORD_PLACEHOLDER':
@@ -354,6 +455,9 @@ def decompression_worker(task_id_str):
             shutil.move(next_item_path, moved_item_path)
             shutil.rmtree(output_path)
             current_file = moved_item_path
+            # 追蹤處理的中間檔案
+            if current_file != original_file:
+                processed_files.append(current_file)
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
         update_task_log(task_id, "日誌: 所有層級已解壓，正在檢查最終內容...", is_progress_text=True)
