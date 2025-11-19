@@ -1006,6 +1006,25 @@
                         }
                         
                         const formData = new FormData(elements.compressForm);
+
+                        // 調試：檢查 FormData 內容
+                        console.log("=== FormData 內容檢查 ===");
+                        let hasFile = false;
+                        for (let pair of formData.entries()) {
+                            if (pair[1] instanceof File) {
+                                console.log(`${pair[0]}: File(${pair[1].name}, ${pair[1].size} bytes)`);
+                                hasFile = true;
+                            } else {
+                                console.log(`${pair[0]}: ${pair[1]}`);
+                            }
+                        }
+
+                        if (!hasFile) {
+                            Toast.error('FormData 中沒有檔案！請檢查文件選擇器。');
+                            console.error('❌ FormData 中沒有檔案，停止提交');
+                            return;
+                        }
+
                         writeDebugLog("表單資料已建立。準備啟動任務...");
                         startTask('/compress', formData);
 
