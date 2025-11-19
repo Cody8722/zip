@@ -573,8 +573,8 @@ def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     # 防止點擊劫持
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    # 內容安全政策
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net"
+    # 內容安全政策（允許 Tailwind CSS CDN）
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net"
     # 強制 HTTPS（在生產環境中啟用）
     # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
