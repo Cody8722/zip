@@ -4,8 +4,6 @@ import tarfile
 import py7zr
 import time
 import shutil
-import string
-import random
 import re
 import threading
 import hashlib
