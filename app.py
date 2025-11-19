@@ -595,7 +595,18 @@ def compress_route():
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
+
+        # 調試：檢查請求內容
+        logging.info(f"=== 接收到壓縮請求 ===")
+        logging.info(f"Content-Type: {request.content_type}")
+        logging.info(f"request.files: {request.files}")
+        logging.info(f"request.form: {dict(request.form)}")
+
         file = request.files.get('file')
+        logging.info(f"獲取的檔案物件: {file}")
+        if file:
+            logging.info(f"檔案名稱: {file.filename}, 類型: {type(file)}")
+
         validate_file(file, mode='compress')
 
         # 取得來源 IP 位址
