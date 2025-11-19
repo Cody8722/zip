@@ -65,9 +65,27 @@ except Exception as e:
     logging.error(f"❌ 應用程式啟動失敗: {e}")
 
 # --- 通用輔助函式 ---
-def generate_password(length=12):
-    characters = string.ascii_letters + string.digits
-    return ''.join(random.choice(characters) for i in range(length))
+def generate_password(filename, salt, length=16):
+    """
+    使用檔案名稱和鹽通過 SHA-256 生成確定性密碼
+
+    Args:
+        filename: 檔案名稱
+        salt: 任務唯一的鹽值
+        length: 密碼長度（預設16）
+
+    Returns:
+        Base64 編碼的密碼字串
+    """
+    # 將檔案名稱和鹽組合
+    data = f"{filename}:{salt}".encode('utf-8')
+    # 使用 SHA-256 生成雜湊
+    hash_digest = hashlib.sha256(data).digest()
+    # 使用 Base64 編碼並移除特殊字符，只保留字母數字
+    password = base64.urlsafe_b64encode(hash_digest).decode('utf-8')
+    # 移除 padding 符號並截取指定長度
+    password = password.replace('=', '').replace('-', '').replace('_', '')
+    return password[:length]
 def update_task_log(task_id, message, is_progress_text=False):
     update_doc = {'$push': {'logs': message}}
     if is_progress_text:
@@ -131,6 +149,9 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     try:
         iterations = params['iterations']
         password_file_content = "--- 壓縮密碼表 ---\n"
+        # 為本次任務生成唯一的鹽（基於 task_id 和時間戳）
+        task_salt = secrets.token_hex(16)
+        password_file_content += f"# 任務鹽值 (Salt): {task_salt}\n"
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
         for i in range(1, iterations + 1):
@@ -143,7 +164,9 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 password = params['master_pass']; log_pwd = "(特殊密碼層)"
             elif (params['encrypt_odd'] and i % 2 != 0) or (not params['encrypt_odd'] and i in params['manual_layers']):
                 if format_name in ('zip', '7z'):
-                    password = generate_password(); log_pwd = password
+                    # 使用檔案名稱和任務鹽生成 SHA-256 密碼
+                    password = generate_password(os.path.basename(output_filename), task_salt)
+                    log_pwd = password
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
