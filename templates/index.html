@@ -99,6 +99,80 @@
         .hidden {
             display: none !important;
         }
+
+        /* Toast 通知系統 */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+
+        .toast {
+            padding: 16px 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+            min-width: 300px;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(400px); opacity: 0; }
+        }
+
+        .toast.removing {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        .toast-success { background-color: #10b981; color: white; }
+        .toast-error { background-color: #ef4444; color: white; }
+        .toast-warning { background-color: #f59e0b; color: white; }
+        .toast-info { background-color: #3b82f6; color: white; }
+
+        .toast-icon { flex-shrink: 0; width: 24px; height: 24px; }
+        .toast-message { flex-grow: 1; font-size: 14px; }
+        .toast-close { cursor: pointer; opacity: 0.8; transition: opacity 0.2s; flex-shrink: 0; }
+        .toast-close:hover { opacity: 1; }
+
+        /* 確認對話框改進 */
+        .confirm-dialog {
+            max-width: 400px;
+        }
+
+        .confirm-dialog .modal-content {
+            padding: 1.5rem;
+        }
+
+        /* 進度條動畫改進 */
+        #progress-bar, #upload-progress-bar {
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* 響應式改進 */
+        @media (max-width: 640px) {
+            #toast-container {
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+
+            .toast {
+                min-width: auto;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300 transition-colors duration-300">
@@ -155,9 +229,10 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                                 <div>
-                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">壓縮層數 (1-100):</label>
-                                    <input type="number" id="iterations" name="iterations" value="3" min="1" max="100" placeholder="建議 3-5 層" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">層數越多越安全，但處理時間也越長</p>
+                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">壓縮層數 (1-50):</label>
+                                    <input type="number" id="iterations" name="iterations" value="3" min="1" max="50" placeholder="建議 3-5 層" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">層數越多越安全，但處理時間也越長（最多50層）</p>
+                                    <p id="file-info-compress" class="mt-1 text-xs text-blue-600 dark:text-blue-400 hidden"></p>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">壓縮格式 (依序循環使用):</label>
@@ -290,6 +365,22 @@
                  <div class="text-center"><button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800"><svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd"></path></svg>開始解壓縮並準備下載</button></div>
             </div>
         </main>
+
+        <!-- Toast 通知容器 -->
+        <div id="toast-container"></div>
+
+        <!-- 確認對話框 -->
+        <div id="confirm-dialog" class="modal-overlay confirm-dialog">
+            <div class="modal-content">
+                <h3 id="confirm-title" class="text-lg font-semibold text-gray-900 dark:text-white mb-3"></h3>
+                <p id="confirm-message" class="text-sm text-gray-600 dark:text-gray-400 mb-6"></p>
+                <div class="flex gap-3 justify-end">
+                    <button id="confirm-cancel" class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500 rounded-md transition">取消</button>
+                    <button id="confirm-ok" class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition">確定</button>
+                </div>
+            </div>
+        </div>
+
         <footer class="text-center mt-8 text-sm text-gray-500 dark:text-gray-400">
              <p>📦 檔案將保留 1 小時後自動刪除，請及時下載</p>
              <!-- 儲存空間警告訊息 -->
@@ -348,6 +439,149 @@
     </div>
     
     <script>
+        // ======= Toast 通知系統 =======
+        const Toast = {
+            container: null,
+            init() {
+                this.container = document.getElementById('toast-container');
+            },
+            show(message, type = 'info', duration = 4000) {
+                if (!this.container) this.init();
+
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type}`;
+
+                const icons = {
+                    success: '<svg class="toast-icon" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" /></svg>',
+                    error: '<svg class="toast-icon" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" /></svg>',
+                    warning: '<svg class="toast-icon" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" /></svg>',
+                    info: '<svg class="toast-icon" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" /></svg>'
+                };
+
+                toast.innerHTML = `
+                    ${icons[type] || icons.info}
+                    <div class="toast-message">${message}</div>
+                    <button class="toast-close" onclick="this.parentElement.remove()">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                `;
+
+                this.container.appendChild(toast);
+
+                if (duration > 0) {
+                    setTimeout(() => {
+                        toast.classList.add('removing');
+                        setTimeout(() => toast.remove(), 300);
+                    }, duration);
+                }
+
+                return toast;
+            },
+            success(message, duration) { return this.show(message, 'success', duration); },
+            error(message, duration) { return this.show(message, 'error', duration); },
+            warning(message, duration) { return this.show(message, 'warning', duration); },
+            info(message, duration) { return this.show(message, 'info', duration); }
+        };
+
+        // ======= 確認對話框系統 =======
+        const ConfirmDialog = {
+            dialog: null,
+            title: null,
+            message: null,
+            okBtn: null,
+            cancelBtn: null,
+            resolveCallback: null,
+
+            init() {
+                this.dialog = document.getElementById('confirm-dialog');
+                this.title = document.getElementById('confirm-title');
+                this.message = document.getElementById('confirm-message');
+                this.okBtn = document.getElementById('confirm-ok');
+                this.cancelBtn = document.getElementById('confirm-cancel');
+
+                this.okBtn.addEventListener('click', () => this.resolve(true));
+                this.cancelBtn.addEventListener('click', () => this.resolve(false));
+                this.dialog.addEventListener('click', (e) => {
+                    if (e.target === this.dialog) this.resolve(false);
+                });
+            },
+
+            show(title, message) {
+                if (!this.dialog) this.init();
+
+                this.title.textContent = title;
+                this.message.textContent = message;
+                this.dialog.classList.add('visible');
+
+                return new Promise((resolve) => {
+                    this.resolveCallback = resolve;
+                });
+            },
+
+            resolve(value) {
+                this.dialog.classList.remove('visible');
+                if (this.resolveCallback) {
+                    this.resolveCallback(value);
+                    this.resolveCallback = null;
+                }
+            }
+        };
+
+        // ======= 檔案資訊顯示工具 =======
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function estimateProcessingTime(fileSize, layers) {
+            // 粗略估算：每 MB 每層約 0.5 秒
+            const sizeInMB = fileSize / (1024 * 1024);
+            const seconds = sizeInMB * layers * 0.5;
+            if (seconds < 60) return `約 ${Math.ceil(seconds)} 秒`;
+            return `約 ${Math.ceil(seconds / 60)} 分鐘`;
+        }
+
+        function displayFileInfo(file, targetId) {
+            const display = document.getElementById(targetId);
+            if (!display || !file) return;
+
+            const size = formatFileSize(file.size);
+            const layers = parseInt(document.getElementById('iterations')?.value || 3);
+            const time = estimateProcessingTime(file.size, layers);
+
+            display.textContent = `📄 ${file.name} (${size}) - 預估處理時間：${time}`;
+            display.classList.remove('hidden');
+        }
+
+        // ======= 快捷鍵支持 =======
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Enter 或 Cmd+Enter 開始壓縮
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const compressSection = document.getElementById('compress-section');
+                const decompressSection = document.getElementById('decompress-section');
+
+                if (!compressSection.classList.contains('hidden')) {
+                    document.getElementById('start-compress-btn')?.click();
+                } else if (!decompressSection.classList.contains('hidden')) {
+                    document.getElementById('start-decompress-btn')?.click();
+                }
+            }
+
+            // Esc 取消操作
+            if (e.key === 'Escape') {
+                const cancelBtn = document.getElementById('cancel-button');
+                if (cancelBtn && !cancelBtn.classList.contains('hidden')) {
+                    cancelBtn.click();
+                }
+            }
+        });
+
         // --- "Black Box" Debugging System ---
         const debugConsole = document.getElementById('debug-console');
         const debugOutput = document.getElementById('debug-output');
