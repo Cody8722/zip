@@ -82,8 +82,8 @@ def cleanup_on_exit():
     """應用程式退出時清理資源"""
     logging.info("正在清理資源...")
     try:
-        # 等待所有任務完成（最多等待 30 秒）
-        executor.shutdown(wait=True, timeout=30)
+        # 等待所有任務完成
+        executor.shutdown(wait=True)
         logging.info("✅ 線程池已清理")
     except Exception as e:
         logging.error(f"清理線程池時發生錯誤: {e}")
