@@ -753,6 +753,7 @@
                 };
                 let currentTaskId = null;
                 let currentConfirmAction = null;
+                let pollingTimeoutId = null;  // 保存輪詢計時器ID
 
                 function setupDropZone(dropZone, fileInput, fileNameDisplay, fileInfoId) {
                     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -776,6 +777,14 @@
                 
                 function startTask(endpoint, formData) {
                     writeDebugLog(`--- 啟動任務: ${endpoint} ---`);
+
+                    // 清除之前的輪詢計時器（如果有）
+                    if (pollingTimeoutId) {
+                        clearTimeout(pollingTimeoutId);
+                        pollingTimeoutId = null;
+                        writeDebugLog('清除舊的輪詢計時器');
+                    }
+
                     elements.mainView.classList.add('hidden');
                     elements.progressSection.classList.remove('hidden');
                     elements.resultSection.classList.add('hidden');
@@ -875,8 +884,12 @@
                             if (data.status === "完成") displayResults(data);
                             elements.cancelButton.classList.add("hidden");
                             currentTaskId = null;
+                            if (pollingTimeoutId) {
+                                clearTimeout(pollingTimeoutId);
+                                pollingTimeoutId = null;
+                            }
                         } else if (currentTaskId === taskId) {
-                            setTimeout(() => checkStatus(taskId), 2000);
+                            pollingTimeoutId = setTimeout(() => checkStatus(taskId), 2000);
                         }
                     } catch (error) {
                         writeDebugLog(`檢查狀態時發生錯誤: ${error.message}\n${error.stack}`, null, true);
@@ -1190,6 +1203,13 @@
                         );
                         if (confirmed) {
                             try {
+                                // 立即停止輪詢
+                                if (pollingTimeoutId) {
+                                    clearTimeout(pollingTimeoutId);
+                                    pollingTimeoutId = null;
+                                    writeDebugLog('已停止狀態輪詢');
+                                }
+
                                 await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
                                 Toast.info('任務已取消');
 
