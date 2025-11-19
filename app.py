@@ -84,13 +84,34 @@ def generate_password(filename, salt, length=16):
     # 移除 padding 符號並截取指定長度
     password = password.replace('=', '').replace('-', '').replace('_', '')
     return password[:length]
+
+def safe_db_operation(operation_func, operation_name="資料庫操作"):
+    """
+    安全執行資料庫操作的包裝函數
+    Args:
+        operation_func: 要執行的資料庫操作函數
+        operation_name: 操作名稱（用於日誌）
+    Returns:
+        操作結果，如果失敗則返回 None
+    """
+    try:
+        return operation_func()
+    except Exception as e:
+        logging.error(f"{operation_name}失敗: {e}", exc_info=True)
+        return None
+
 def update_task_log(task_id, message, is_progress_text=False):
-    update_doc = {'$push': {'logs': message}}
-    if is_progress_text:
-        update_doc['$set'] = {'progress_text': message}
-    tasks_collection.update_one({'_id': task_id}, update_doc)
+    def _update():
+        update_doc = {'$push': {'logs': message}}
+        if is_progress_text:
+            update_doc['$set'] = {'progress_text': message}
+        return tasks_collection.update_one({'_id': task_id}, update_doc)
+    safe_db_operation(_update, f"更新任務日誌 ({task_id})")
+
 def update_task_progress(task_id, progress):
-    tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
+    def _update():
+        return tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
+    safe_db_operation(_update, f"更新任務進度 ({task_id})")
 def parse_password_text(password_text):
     password_list = []
     for line in password_text.strip().split('\n'):
@@ -144,6 +165,8 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     task = tasks_collection.find_one({'_id': task_id});
     if not task: return
     params = task['params']; original_file = params['original_file']
+    # 追蹤所有生成的檔案以便失敗時清理
+    generated_files = []
     try:
         iterations = params['iterations']
         password_file_content = "--- 壓縮密碼表 ---\n"
@@ -184,16 +207,16 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
 
-            # 使用串流方式壓縮以節省記憶體
+            # 執行壓縮
             if format_name in ('zip', '7z'):
                 with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
-                    # 使用 writestr 配合檔案物件實現串流壓縮
-                    with open(current_file, 'rb') as f:
-                        z.writestr(f, os.path.basename(current_file))
+                    z.write(current_file, os.path.basename(current_file))
             else:
-                # tarfile 本身就是串流處理
                 with tarfile.open(output_filename, 'w:gz') as tf:
                     tf.add(current_file, arcname=os.path.basename(current_file))
+
+            # 追蹤生成的檔案
+            generated_files.append(output_filename)
             if current_file != original_file: os.remove(current_file)
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
@@ -215,12 +238,34 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 update_task_log(task_id, f"⚠️ 寄送通知信失敗: {e}")
     except (py7zr.Bad7zFile, zipfile.BadZipFile, tarfile.ReadError) as e:
         update_task_log(task_id, f"❌ 檔案格式錯誤或已損毀: {e}")
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
+        safe_db_operation(
+            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            "設定任務失敗狀態"
+        )
     except Exception as e:
         logging.error(f"壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
+        safe_db_operation(
+            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            "設定任務失敗狀態"
+        )
     finally:
-        if 'original_file' in locals() and os.path.exists(original_file): os.remove(original_file)
+        # 清理原始上傳檔案
+        if 'original_file' in locals() and os.path.exists(original_file):
+            os.remove(original_file)
+        # 如果任務失敗，清理所有生成的中間檔案
+        if 'generated_files' in locals():
+            task_status = safe_db_operation(
+                lambda: tasks_collection.find_one({'_id': task_id}, {'status': 1}),
+                "查詢任務狀態"
+            )
+            if task_status and task_status.get('status') == '失敗':
+                for temp_file in generated_files:
+                    if os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                            logging.info(f"已清理失敗任務的檔案: {temp_file}")
+                        except Exception as cleanup_err:
+                            logging.error(f"清理檔案失敗: {cleanup_err}")
 
 def decompression_worker(task_id_str):
     task_id = ObjectId(task_id_str)
@@ -262,9 +307,16 @@ def decompression_worker(task_id_str):
             if current_file != original_file: os.remove(current_file)
             extracted_items = os.listdir(output_path)
             if not extracted_items: raise Exception("解壓縮後找不到任何檔案。")
-            
+
+            # 防止路徑穿越攻擊：使用 basename 清理檔案名稱
+            safe_item_name = os.path.basename(extracted_items[0])
             next_item_path = os.path.join(output_path, extracted_items[0])
-            moved_item_path = os.path.join(OUTPUT_FOLDER, extracted_items[0])
+            moved_item_path = os.path.join(OUTPUT_FOLDER, safe_item_name)
+
+            # 確保目標路徑在 OUTPUT_FOLDER 內
+            if not os.path.abspath(moved_item_path).startswith(os.path.abspath(OUTPUT_FOLDER)):
+                raise Exception("偵測到路徑穿越攻擊，已中止操作。")
+
             shutil.move(next_item_path, moved_item_path)
             shutil.rmtree(output_path)
             current_file = moved_item_path
@@ -302,18 +354,51 @@ def decompression_worker(task_id_str):
         update_task_log(task_id, "✅ 解壓縮流程結束。")
     except (py7zr.Bad7zFile, zipfile.BadZipFile, tarfile.ReadError) as e:
         update_task_log(task_id, f"❌ 檔案格式錯誤或已損毀: {e}")
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
+        safe_db_operation(
+            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            "設定任務失敗狀態"
+        )
     except Exception as e:
         logging.error(f"解壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}})
+        safe_db_operation(
+            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            "設定任務失敗狀態"
+        )
     finally:
-        if 'original_file' in locals() and os.path.exists(original_file): os.remove(original_file)
-        if 'current_file' in locals() and os.path.exists(current_file):
-            if os.path.isdir(current_file): shutil.rmtree(current_file)
-            else: os.remove(current_file)
-        if 'final_archive_path' in locals() and os.path.exists(final_archive_path):
-             os.remove(final_archive_path)
-        if os.path.exists(output_path): shutil.rmtree(output_path)
+        # 清理原始上傳檔案
+        if 'original_file' in locals() and os.path.exists(original_file):
+            os.remove(original_file)
+
+        # 清理臨時解壓目錄
+        if 'output_path' in locals() and os.path.exists(output_path):
+            try:
+                shutil.rmtree(output_path)
+                logging.info(f"已清理臨時解壓目錄: {output_path}")
+            except Exception as e:
+                logging.error(f"清理臨時目錄失敗: {e}")
+
+        # 如果任務失敗，清理所有中間檔案
+        task_status = safe_db_operation(
+            lambda: tasks_collection.find_one({'_id': task_id}, {'status': 1}),
+            "查詢任務狀態"
+        )
+        if task_status and task_status.get('status') == '失敗':
+            if 'current_file' in locals() and os.path.exists(current_file):
+                try:
+                    if os.path.isdir(current_file):
+                        shutil.rmtree(current_file)
+                    else:
+                        os.remove(current_file)
+                    logging.info(f"已清理失敗任務的檔案: {current_file}")
+                except Exception as e:
+                    logging.error(f"清理檔案失敗: {e}")
+
+            if 'final_archive_path' in locals() and os.path.exists(final_archive_path):
+                try:
+                    os.remove(final_archive_path)
+                    logging.info(f"已清理失敗任務的歸檔: {final_archive_path}")
+                except Exception as e:
+                    logging.error(f"清理歸檔失敗: {e}")
 
 def send_completion_email(recipient_email, task_id, original_filename, host_url):
     if not MAIL_USERNAME or not MAIL_PASSWORD: raise Exception("伺服器未設定郵件功能。")
