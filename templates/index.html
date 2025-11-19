@@ -1166,8 +1166,19 @@
                             '您確定要取消當前的壓縮/解壓縮任務嗎？\n已處理的進度將會遺失。'
                         );
                         if (confirmed) {
-                            await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
-                            Toast.info('任務已取消');
+                            try {
+                                await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                                Toast.info('任務已取消');
+
+                                // 更新UI狀態
+                                elements.cancelButton.classList.add('hidden');
+                                elements.progressSection.classList.add('hidden');
+                                elements.resultSection.classList.add('hidden');
+                                elements.mainView.classList.remove('hidden');
+                                currentTaskId = null;
+                            } catch (error) {
+                                Toast.error(`取消失敗: ${error.message}`);
+                            }
                         }
                     }
                 });
