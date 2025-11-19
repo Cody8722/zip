@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # 禁用靜態文件緩存以減少記憶體佔用
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
