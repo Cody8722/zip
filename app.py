@@ -600,8 +600,18 @@ def compress_route():
         # 調試：檢查請求內容
         logging.info(f"=== 接收到壓縮請求 ===")
         logging.info(f"Content-Type: {request.content_type}")
-        logging.info(f"request.files: {request.files}")
-        logging.info(f"request.form: {dict(request.form)}")
+        logging.info(f"Content-Length: {request.headers.get('Content-Length', 'N/A')}")
+        logging.info(f"Method: {request.method}")
+        logging.info(f"URL: {request.url}")
+        logging.info(f"request.files keys: {list(request.files.keys())}")
+        logging.info(f"request.form keys: {list(request.form.keys())}")
+        logging.info(f"request.content_length: {request.content_length}")
+
+        # 檢查是否有原始數據
+        if request.content_length and request.content_length > 0:
+            logging.info(f"請求聲稱有 {request.content_length} bytes 的數據")
+        else:
+            logging.warning("請求的 content_length 為 0 或 None！")
 
         file = request.files.get('file')
         logging.info(f"獲取的檔案物件: {file}")
