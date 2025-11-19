@@ -1,7 +1,7 @@
-Flask
-py7zr
-gunicorn
-pymongo
-dnspython
-cryptography
-qrcode[pil]
+Flask==3.0.0
+py7zr==0.21.0
+gunicorn==21.2.0
+pymongo==4.6.0
+dnspython==2.4.2
+cryptography==41.0.7
+qrcode[pil]==7.4.2

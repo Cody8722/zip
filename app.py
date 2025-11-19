@@ -57,6 +57,13 @@ MAX_ITERATIONS = 50  # 最多 50 層壓縮
 MIN_ITERATIONS = 1   # 至少 1 層
 MIN_MASTER_PASS_INTERVAL = 1  # 特殊密碼間隔至少 1 層
 
+# --- 其他常數 ---
+CANCEL_CHECK_INTERVAL = 5  # 每 5 層檢查一次取消狀態，平衡性能與響應速度
+FILENAME_UNIQUE_SUFFIX_BYTES = 2  # 檔名唯一性後綴長度（2 bytes = 4 個字符）
+TASK_SALT_BYTES = 16  # 任務鹽值長度（16 bytes = 32 個字符）
+DELETE_TOKEN_BYTES = 16  # 刪除令牌長度（16 bytes = 32 個字符）
+RANDOM_FILENAME_BYTES = 8  # 隨機檔名長度（8 bytes = 16 個字符）
+
 client = None; db = None; tasks_collection = None; fs = None
 try:
     if not MONGO_URI: raise ValueError("錯誤：找不到 MONGO_URI 環境變數。")
@@ -254,21 +261,21 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     task = tasks_collection.find_one({'_id': task_id});
     if not task: return
     params = task['params']; original_file = params['original_file']
+    # 記錄原始文件大小用於壓縮率計算
+    original_size = os.path.getsize(original_file)
     # 追蹤所有生成的檔案以便失敗時清理
     generated_files = []
-    # 用於檢查取消狀態的標誌（避免每次循環都查詢資料庫）
-    cancel_check_interval = 5  # 每 5 層檢查一次
     try:
         iterations = params['iterations']
         password_file_content = "--- 壓縮密碼表 ---\n"
         # 為本次任務生成唯一的鹽（基於 task_id 和時間戳）
-        task_salt = secrets.token_hex(16)
+        task_salt = secrets.token_hex(TASK_SALT_BYTES)
         password_file_content += f"# 任務鹽值 (Salt): {task_salt}\n"
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
         for i in range(1, iterations + 1):
             # 每隔幾層檢查一次取消狀態，避免頻繁查詢資料庫
-            if i % cancel_check_interval == 0 or i == 1:
+            if i % CANCEL_CHECK_INTERVAL == 0 or i == 1:
                 task_status = safe_db_operation(
                     lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
                     "檢查取消狀態"
@@ -296,14 +303,14 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 # 使用 secure_filename 清理檔名，防止路徑穿越
                 safe_raw_filename = secure_filename(params['raw_filename'])
                 base_name = os.path.splitext(safe_raw_filename)[0]
-                # 加上 4 字符隨機碼避免檔名衝突
-                unique_suffix = secrets.token_hex(2)
+                # 加上隨機碼避免檔名衝突
+                unique_suffix = secrets.token_hex(FILENAME_UNIQUE_SUFFIX_BYTES)
                 final_filename = f"{base_name}_{unique_suffix}{formats[format_name]}"
                 output_filename = os.path.join(OUTPUT_FOLDER, final_filename)
                 filename_for_password = final_filename
             else:
-                # 中間層：使用隨機檔名（16字符）
-                random_filename = secrets.token_hex(8) + formats[format_name]
+                # 中間層：使用隨機檔名
+                random_filename = secrets.token_hex(RANDOM_FILENAME_BYTES) + formats[format_name]
                 output_filename = os.path.join(OUTPUT_FOLDER, random_filename)
                 filename_for_password = random_filename
 
@@ -333,15 +340,21 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
         update_task_log(task_id, "✅ 壓縮流程結束。", is_progress_text=True)
+        # 計算壓縮率
+        final_size = os.path.getsize(current_file)
+        compression_ratio = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+
         with open(current_file, 'rb') as f_in:
             file_id = fs.put(f_in, filename=os.path.basename(current_file))
         os.remove(current_file)
-        delete_token = secrets.token_hex(16)
-        tasks_collection.update_one({'_id': task_id}, {'$set': { 
-            'status': '完成', 'progress': 100, 
-            'result_file_id': str(file_id), 'result_filename': os.path.basename(current_file), 
-            'password_file_content': password_file_content, 'delete_token': delete_token
+        delete_token = secrets.token_hex(DELETE_TOKEN_BYTES)
+        tasks_collection.update_one({'_id': task_id}, {'$set': {
+            'status': '完成', 'progress': 100,
+            'result_file_id': str(file_id), 'result_filename': os.path.basename(current_file),
+            'password_file_content': password_file_content, 'delete_token': delete_token,
+            'original_size': original_size, 'final_size': final_size, 'compression_ratio': round(compression_ratio, 2)
         }})
+        update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
         if recipient_email and host_url:
             try:
                 send_completion_email(recipient_email, task_id_str, params['raw_filename'], host_url)
@@ -551,6 +564,20 @@ def send_completion_email(recipient_email, task_id, original_filename, host_url)
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
         smtp.login(MAIL_USERNAME, MAIL_PASSWORD)
         smtp.send_message(msg)
+
+# --- 安全標頭設置 ---
+@app.after_request
+def set_security_headers(response):
+    """為所有回應添加安全標頭"""
+    # 防止 XSS 攻擊
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    # 防止點擊劫持
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    # 內容安全政策
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net"
+    # 強制 HTTPS（在生產環境中啟用）
+    # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 # --- API 路由 ---
 def handle_route_exception(e, endpoint_name):

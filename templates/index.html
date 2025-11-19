@@ -558,6 +558,22 @@
             display.classList.remove('hidden');
         }
 
+        // ======= 日誌顏色編碼 =======
+        function colorizeLog(log) {
+            let html = log.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            // 成功訊息 - 綠色
+            html = html.replace(/(✅[^\n]*)/g, '<span style="color: #10b981;">$1</span>');
+            // 錯誤訊息 - 紅色
+            html = html.replace(/(❌[^\n]*)/g, '<span style="color: #ef4444;">$1</span>');
+            // 警告訊息 - 黃色
+            html = html.replace(/(⚠️[^\n]*)/g, '<span style="color: #f59e0b;">$1</span>');
+            // 資訊訊息 - 藍色
+            html = html.replace(/(📊[^\n]*|🔐[^\n]*|📁[^\n]*)/g, '<span style="color: #3b82f6;">$1</span>');
+            // 進度訊息 - 青色
+            html = html.replace(/(正在[^\n]*|第 \d+ 層[^\n]*|--- [^\n]*)/g, '<span style="color: #06b6d4;">$1</span>');
+            return html;
+        }
+
         // ======= 快捷鍵支持 =======
         document.addEventListener('keydown', (e) => {
             // Ctrl+Enter 或 Cmd+Enter 開始壓縮
@@ -735,9 +751,15 @@
                         if (e.dataTransfer.files.length) {
                             fileInput.files = e.dataTransfer.files;
                             fileNameDisplay.textContent = fileInput.files[0].name;
+                            displayFileInfo(fileInput.files[0], fileInfoId);
                         }
                     });
-                    fileInput.addEventListener('change', () => { if (fileInput.files.length > 0) fileNameDisplay.textContent = fileInput.files[0].name; });
+                    fileInput.addEventListener('change', () => {
+                        if (fileInput.files.length > 0) {
+                            fileNameDisplay.textContent = fileInput.files[0].name;
+                            displayFileInfo(fileInput.files[0], fileInfoId);
+                        }
+                    });
                 }
                 
                 function startTask(endpoint, formData) {
@@ -786,7 +808,8 @@
                             }
                         } catch (e) {
                             writeDebugLog(`處理 XHR 回應時發生錯誤: ${e.message}\n${e.stack}`, null, true);
-                            elements.logBox.innerHTML = `<span style="color: #ef4444;">處理回應時發生錯誤: ${e.message}</span>`;
+                            Toast.error(`處理回應時發生錯誤: ${e.message}`);
+                            elements.logBox.textContent = `❌ 處理回應時發生錯誤: ${e.message}`;
                             elements.progressStatus.textContent = "失敗";
                             elements.cancelButton.classList.add('hidden');
                         }
@@ -795,7 +818,8 @@
                     xhr.onerror = () => {
                         writeDebugLog("XHR: 發生網路錯誤。", null, true);
                         elements.uploadProgressContainer.classList.add('hidden');
-                        elements.logBox.innerHTML = `<span style="color: #ef4444;">上傳時發生網路錯誤。</span>`;
+                        Toast.error('上傳時發生網路錯誤，請檢查網路連線');
+                        elements.logBox.textContent = '❌ 上傳時發生網路錯誤。';
                         elements.progressStatus.textContent = "失敗";
                         elements.cancelButton.classList.add('hidden');
                     };
@@ -829,7 +853,7 @@
                         elements.progressBar.style.width = `${progress}%`;
                         elements.progressPercentage.textContent = `${progress}%`;
                         elements.progressContainer.setAttribute("aria-valuenow", progress);
-                        elements.logBox.innerHTML = (data.logs || []).join("\n").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                        elements.logBox.innerHTML = colorizeLog((data.logs || []).join("\n"));
                         elements.logBox.scrollTop = elements.logBox.scrollHeight;
 
                         if (["完成", "失敗", "已取消", "已刪除"].includes(data.status)) {
@@ -844,7 +868,8 @@
                         }
                     } catch (error) {
                         writeDebugLog(`檢查狀態時發生錯誤: ${error.message}\n${error.stack}`, null, true);
-                        elements.logBox.innerHTML += "\n檢查狀態時發生網路錯誤。";
+                        Toast.warning('檢查狀態時發生網路錯誤');
+                        elements.logBox.textContent += "\n❌ 檢查狀態時發生網路錯誤。";
                     }
                 }
                 
@@ -978,7 +1003,7 @@
 
                     } catch(error) {
                         writeDebugLog(`壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, null, true);
-                        alert(`輸入錯誤：${error.message}`);
+                        Toast.error(`輸入錯誤：${error.message}`);
                     }
                 });
 
@@ -1001,7 +1026,7 @@
                         startTask('/decompress-manual', new FormData(elements.decompressForm));
                      } catch(error) {
                          writeDebugLog(`解壓縮表單提交時發生錯誤: ${error.message}\n${error.stack}`, null, true);
-                         alert(`輸入錯誤：${error.message}`);
+                         Toast.error(`輸入錯誤：${error.message}`);
                      }
                 });
 
@@ -1024,8 +1049,8 @@
                     });
                 });
 
-                setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress);
-                setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress);
+                setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress, 'file-info-compress');
+                setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress, 'file-info-decompress');
                 
                 elements.historyList.addEventListener("click", e => {
                     const target = e.target;
@@ -1045,15 +1070,20 @@
                     }
                 });
 
-                elements.clearHistoryBtn.addEventListener('click', () => {
+                elements.clearHistoryBtn.addEventListener('click', async () => {
                     const history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
                     if (history.length === 0) {
                         writeDebugLog("清除歷史紀錄: 沒有紀錄可供清除。");
+                        Toast.info('沒有歷史紀錄可供清除');
                         return;
                     }
-                    elements.deleteModalTitle.textContent = '永久清除所有紀錄';
-                    elements.deleteModalText.innerHTML = `您確定要刪除 ${history.length} 筆歷史紀錄及其對應的雲端檔案嗎？<br>此操作無法復原！`;
-                    currentConfirmAction = async () => {
+
+                    const confirmed = await ConfirmDialog.show(
+                        '永久清除所有紀錄',
+                        `您確定要刪除 ${history.length} 筆歷史紀錄及其對應的雲端檔案嗎？\n此操作無法復原！`
+                    );
+
+                    if (confirmed) {
                         const tasksToDelete = history.map(item => ({ id: item.id, token: item.token }));
                         try {
                             const response = await fetch('/delete-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: tasksToDelete }) });
@@ -1062,11 +1092,12 @@
                             localStorage.removeItem('compressHistory');
                             renderHistory();
                             updateStorageStats();
+                            Toast.success(`成功刪除 ${history.length} 筆紀錄`);
                         } catch (error) {
                             writeDebugLog(`批次刪除失敗: ${error.message}`, null, true);
+                            Toast.error(`刪除失敗: ${error.message}`);
                         }
-                    };
-                    elements.deleteConfirmModal.classList.add('visible');
+                    }
                 });
 
                 elements.cleanupOrphansBtn.addEventListener('click', () => {
@@ -1111,7 +1142,14 @@
                 elements.cancelButton.addEventListener('click', async () => {
                     writeDebugLog(`取消按鈕點擊，任務 ID: ${currentTaskId}`);
                     if (currentTaskId) {
-                        await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                        const confirmed = await ConfirmDialog.show(
+                            '確認取消任務',
+                            '您確定要取消當前的壓縮/解壓縮任務嗎？\n已處理的進度將會遺失。'
+                        );
+                        if (confirmed) {
+                            await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                            Toast.info('任務已取消');
+                        }
                     }
                 });
                 elements.closeModalBtn.addEventListener('click', () => elements.qrCodeModal.classList.remove('visible'));
@@ -1182,6 +1220,15 @@
             initializeDebugMode();
         });
     </script>
+
+    <!-- 快捷鍵提示 -->
+    <div class="fixed bottom-4 right-4 bg-gray-800 text-white text-xs px-3 py-2 rounded-lg shadow-lg opacity-70 hover:opacity-100 transition-opacity dark:bg-gray-700" style="z-index: 9998;">
+        <div class="font-semibold mb-1">⌨️ 快捷鍵</div>
+        <div class="space-y-0.5">
+            <div><kbd class="px-1 py-0.5 bg-gray-700 rounded text-xxs dark:bg-gray-600">Ctrl</kbd> + <kbd class="px-1 py-0.5 bg-gray-700 rounded text-xxs dark:bg-gray-600">Enter</kbd> 開始處理</div>
+            <div><kbd class="px-1 py-0.5 bg-gray-700 rounded text-xxs dark:bg-gray-600">Esc</kbd> 取消操作</div>
+        </div>
+    </div>
 </body>
 </html>
 
