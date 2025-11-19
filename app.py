@@ -26,7 +26,7 @@ from email.message import EmailMessage
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-# 移除 MAX_CONTENT_LENGTH 限制，讓 gunicorn 和檔案驗證來處理大小
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 設定 ---
@@ -597,15 +597,12 @@ def compress_route():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
 
-        # 調試：檢查請求內容（避免過早訪問 request.files 觸發解析）
+        # 調試：檢查請求內容
         logging.info(f"=== 接收到壓縮請求 ===")
         logging.info(f"Content-Type: {request.content_type}")
         logging.info(f"Content-Length: {request.headers.get('Content-Length', 'N/A')}")
         logging.info(f"Transfer-Encoding: {request.headers.get('Transfer-Encoding', 'N/A')}")
         logging.info(f"X-Forwarded-For: {request.headers.get('X-Forwarded-For', 'N/A')}")
-
-        # 強制設定較大的 max_content_length
-        request.max_content_length = 500 * 1024 * 1024  # 500MB
 
         logging.info(f"開始解析 multipart 數據...")
         try:
