@@ -301,6 +301,7 @@
                                         或將檔案拖曳至此
                                     </p>
                                     <p id="file-name-display-decompress" class="mt-1 text-xs text-gray-500"></p>
+                                    <p id="file-info-decompress" class="mt-1 text-xs text-blue-600 dark:text-blue-400 hidden"></p>
                                 </label>
                             </div>
                             <div>
@@ -551,10 +552,17 @@
             if (!display || !file) return;
 
             const size = formatFileSize(file.size);
-            const layers = parseInt(document.getElementById('iterations')?.value || 3);
-            const time = estimateProcessingTime(file.size, layers);
 
-            display.textContent = `📄 ${file.name} (${size}) - 預估處理時間：${time}`;
+            // 如果是壓縮頁面，顯示預估時間
+            if (targetId === 'file-info-compress') {
+                const layers = parseInt(document.getElementById('iterations')?.value || 3);
+                const time = estimateProcessingTime(file.size, layers);
+                display.textContent = `📄 ${file.name} (${size}) - 預估處理時間：${time}`;
+            } else {
+                // 解壓縮頁面只顯示檔案資訊
+                display.textContent = `📄 ${file.name} (${size})`;
+            }
+
             display.classList.remove('hidden');
         }
 
@@ -1051,7 +1059,18 @@
 
                 setupDropZone(elements.dropZoneCompress, elements.fileInputCompress, elements.fileNameDisplayCompress, 'file-info-compress');
                 setupDropZone(elements.dropZoneDecompress, elements.fileInputDecompress, elements.fileNameDisplayDecompress, 'file-info-decompress');
-                
+
+                // 當壓縮層數改變時，更新預估時間
+                const iterationsInput = document.getElementById('iterations');
+                if (iterationsInput) {
+                    iterationsInput.addEventListener('change', () => {
+                        const fileInput = elements.fileInputCompress;
+                        if (fileInput.files && fileInput.files.length > 0) {
+                            displayFileInfo(fileInput.files[0], 'file-info-compress');
+                        }
+                    });
+                }
+
                 elements.historyList.addEventListener("click", e => {
                     const target = e.target;
                     const taskId = target.dataset.id;
