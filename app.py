@@ -587,7 +587,9 @@ def handle_route_exception(e, endpoint_name):
     return jsonify({'error': '伺服器內部發生錯誤，請稍後再試。'}), 500
 
 @app.route('/')
-def index(): return render_template('index.html')
+def index():
+    logging.info(f"首頁訪問 - IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
+    return render_template('index.html')
 
 @app.route('/compress', methods=['POST'])
 def compress_route():
@@ -596,7 +598,14 @@ def compress_route():
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
 
+        # 調試：記錄請求信息
+        logging.info(f"=== 接收到壓縮請求 ===")
+        logging.info(f"Content-Type: {request.content_type}")
+        logging.info(f"Content-Length: {request.headers.get('Content-Length', 'N/A')}")
+        logging.info(f"IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
+
         file = request.files.get('file')
+        logging.info(f"接收到檔案: {file.filename if file else 'None'}")
 
         validate_file(file, mode='compress')
 
@@ -655,7 +664,14 @@ def decompress_manual_route():
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
+
+        # 調試：記錄解壓縮請求
+        logging.info(f"=== 接收到解壓縮請求 ===")
+        logging.info(f"IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
+
         file = request.files.get('file')
+        logging.info(f"接收到檔案: {file.filename if file else 'None'}")
+
         validate_file(file, mode='decompress')
         
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
