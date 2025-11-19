@@ -605,8 +605,24 @@ def compress_route():
         logging.info(f"Content-Length: {request.headers.get('Content-Length', 'N/A')}")
         logging.info(f"IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
 
+        # 調試：檢查 request.files 和 request.form
+        logging.info(f"request.files keys: {list(request.files.keys())}")
+        logging.info(f"request.form keys: {list(request.form.keys())}")
+
+        # 嘗試直接讀取 stream
+        if hasattr(request, 'stream'):
+            logging.info(f"request.stream 存在: {request.stream is not None}")
+
         file = request.files.get('file')
         logging.info(f"接收到檔案: {file.filename if file else 'None'}")
+
+        if not file:
+            # 如果沒有 file，檢查是否有其他 keys
+            if request.files:
+                logging.info(f"request.files 內容: {[(k, v.filename) for k, v in request.files.items()]}")
+            if request.form:
+                logging.info(f"request.form 內容: {dict(request.form)}")
+            logging.error("❌ 無法獲取檔案，可能是 Zeabur 反向代理限制或 multipart 解析失敗")
 
         validate_file(file, mode='compress')
 
