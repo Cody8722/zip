@@ -604,6 +604,20 @@ def compress_route():
         logging.info(f"Transfer-Encoding: {request.headers.get('Transfer-Encoding', 'N/A')}")
         logging.info(f"X-Forwarded-For: {request.headers.get('X-Forwarded-For', 'N/A')}")
 
+        # 檢查原始數據是否存在
+        try:
+            # 先偷看一下原始數據的開頭（不消耗 stream）
+            if hasattr(request, 'stream') and request.stream:
+                logging.info(f"request.stream 存在")
+
+            # 檢查 environ 中的 wsgi.input
+            if 'wsgi.input' in request.environ:
+                logging.info(f"wsgi.input 存在於 environ 中")
+                wsgi_input = request.environ['wsgi.input']
+                logging.info(f"wsgi.input 類型: {type(wsgi_input)}")
+        except Exception as e:
+            logging.warning(f"檢查原始數據時發生錯誤: {e}")
+
         logging.info(f"開始解析 multipart 數據...")
         try:
             # 先看看 request.files 和 request.form 裡有什麼
