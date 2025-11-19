@@ -159,9 +159,11 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
 
             # 最後一層使用原始檔名，其他層使用隨機檔名
             if i == iterations:
-                # 最後一層：使用原始檔名（不含原副檔名）+ 新格式副檔名
+                # 最後一層：使用原始檔名（不含原副檔名）+ 短隨機碼 + 新格式副檔名
                 base_name = os.path.splitext(params['raw_filename'])[0]
-                final_filename = base_name + formats[format_name]
+                # 加上 4 字符隨機碼避免檔名衝突
+                unique_suffix = secrets.token_hex(2)
+                final_filename = f"{base_name}_{unique_suffix}{formats[format_name]}"
                 output_filename = os.path.join(OUTPUT_FOLDER, final_filename)
                 filename_for_password = final_filename
             else:
@@ -181,10 +183,17 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
+
+            # 使用串流方式壓縮以節省記憶體
             if format_name in ('zip', '7z'):
-                with py7zr.SevenZipFile(output_filename, 'w', password=password) as z: z.write(current_file, os.path.basename(current_file))
+                with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
+                    # 使用 writestr 配合檔案物件實現串流壓縮
+                    with open(current_file, 'rb') as f:
+                        z.writestr(f, os.path.basename(current_file))
             else:
-                with tarfile.open(output_filename, 'w:gz') as tf: tf.add(current_file, arcname=os.path.basename(current_file))
+                # tarfile 本身就是串流處理
+                with tarfile.open(output_filename, 'w:gz') as tf:
+                    tf.add(current_file, arcname=os.path.basename(current_file))
             if current_file != original_file: os.remove(current_file)
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
