@@ -50,6 +50,11 @@ MAX_FILE_SIZE_MB = int(os.environ.get('MAX_FILE_SIZE_MB', 100))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MAX_DECOMPRESS_SIZE_BYTES = 1 * 1024 * 1024 * 1024 # 1 GB
 
+# --- 壓縮參數限制 ---
+MAX_ITERATIONS = 50  # 最多 50 層壓縮
+MIN_ITERATIONS = 1   # 至少 1 層
+MIN_MASTER_PASS_INTERVAL = 1  # 特殊密碼間隔至少 1 層
+
 client = None; db = None; tasks_collection = None; fs = None
 try:
     if not MONGO_URI: raise ValueError("錯誤：找不到 MONGO_URI 環境變數。")
@@ -124,6 +129,35 @@ def parse_password_text(password_text):
             else:
                 password_list.append({'filename': fname.strip(), 'password': None if password == '(無密碼)' else password})
     return password_list
+
+def validate_compression_params(params):
+    """
+    驗證壓縮參數的合法性
+    Raises:
+        ValueError: 參數不合法時拋出異常
+    """
+    # 驗證 iterations
+    iterations = params.get('iterations', 0)
+    if not isinstance(iterations, int) or iterations < MIN_ITERATIONS or iterations > MAX_ITERATIONS:
+        raise ValueError(f"壓縮層數必須在 {MIN_ITERATIONS} 到 {MAX_ITERATIONS} 之間。")
+
+    # 驗證 master_pass_interval
+    if params.get('use_master_pass'):
+        interval = params.get('master_pass_interval', 0)
+        if not isinstance(interval, int) or interval < MIN_MASTER_PASS_INTERVAL:
+            raise ValueError(f"特殊密碼間隔必須至少為 {MIN_MASTER_PASS_INTERVAL} 層。")
+        if interval > iterations:
+            raise ValueError("特殊密碼間隔不能大於總壓縮層數。")
+
+    # 驗證 manual_layers
+    manual_layers = params.get('manual_layers', [])
+    for layer in manual_layers:
+        if not isinstance(layer, int) or layer < 1 or layer > iterations:
+            raise ValueError(f"手動設定的密碼層 {layer} 超出有效範圍（1-{iterations}）。")
+
+    # 驗證 formats
+    if not params.get('formats') or len(params['formats']) == 0:
+        raise ValueError("至少需要選擇一種壓縮格式。")
 
 def validate_file(file, mode='compress'):
     if not file or not file.filename:
@@ -436,26 +470,49 @@ def compress_route():
         # 取得來源 IP 位址
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
 
-        # *** 關鍵修正：根據您的指南，新增 expected_filename 欄位 ***
+        # 解析並驗證參數
+        try:
+            iterations = int(request.form.get('iterations', 5))
+            master_pass_interval = int(request.form.get('master_password_interval', '10'))
+            manual_layers = [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()]
+        except ValueError:
+            raise ValueError("參數格式錯誤，請檢查數字欄位。")
+
         params = {
             'raw_filename': file.filename,
-            'expected_filename': file.filename, # <-- THE FIX
-            'iterations': int(request.form.get('iterations', 5)),
+            'expected_filename': file.filename,
+            'iterations': iterations,
             'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
-            'manual_layers': [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()],
+            'manual_layers': manual_layers,
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
             'use_master_pass': request.form.get('use_master_pass') == 'on',
             'master_pass': request.form.get('master_password'),
-            'master_pass_interval': int(request.form.get('master_password_interval', '10'))
+            'master_pass_interval': master_pass_interval
         }
+
+        # 驗證壓縮參數
+        validate_compression_params(params)
 
         task = {'type': 'compress', 'status': 'pending', 'params': params, 'created_at': datetime.utcnow(), 'ip_address': ip_address}
         task_id = tasks_collection.insert_one(task).inserted_id
-        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
-        file.save(filepath)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
-        executor.submit(task_wrapper, compression_worker, str(task_id), request.form.get('recipient_email'), request.host_url)
-        return jsonify({'task_id': str(task_id)})
+
+        # 使用 try-except 包裹檔案上傳，失敗時清理資料庫記錄
+        try:
+            filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
+            file.save(filepath)
+            tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
+            executor.submit(task_wrapper, compression_worker, str(task_id), request.form.get('recipient_email'), request.host_url)
+            return jsonify({'task_id': str(task_id)})
+        except Exception as upload_err:
+            # 上傳失敗，清理資料庫記錄
+            safe_db_operation(lambda: tasks_collection.delete_one({'_id': task_id}), "清理失敗的任務記錄")
+            # 如果檔案已部分寫入，嘗試刪除
+            if 'filepath' in locals() and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+            raise ValueError(f"檔案上傳失敗: {upload_err}")
     except Exception as e:
         return handle_route_exception(e, 'compress')
 
@@ -478,20 +535,32 @@ def decompress_manual_route():
         if not params['password_list']: raise ValueError("無法解析您提供的密碼表。")
         
         task = {
-            'type': 'decompress', 
-            'status': 'pending', 
-            'params': params, 
+            'type': 'decompress',
+            'status': 'pending',
+            'params': params,
             'created_at': datetime.utcnow(),
             'ip_address': ip_address
         }
         task_id = tasks_collection.insert_one(task).inserted_id
-        filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
-        file.save(filepath)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
-        executor.submit(task_wrapper, decompression_worker, str(task_id))
-        return jsonify({'task_id': str(task_id)})
+
+        # 使用 try-except 包裹檔案上傳，失敗時清理資料庫記錄
+        try:
+            filepath = os.path.join(UPLOAD_FOLDER, f"{str(task_id)}_{secure_filename(file.filename)}")
+            file.save(filepath)
+            tasks_collection.update_one({'_id': task_id}, {'$set': {'params.original_file': filepath, 'status': '處理中', 'progress_text': '準備開始...'}})
+            executor.submit(task_wrapper, decompression_worker, str(task_id))
+            return jsonify({'task_id': str(task_id)})
+        except Exception as upload_err:
+            # 上傳失敗，清理資料庫記錄
+            safe_db_operation(lambda: tasks_collection.delete_one({'_id': task_id}), "清理失敗的任務記錄")
+            # 如果檔案已部分寫入，嘗試刪除
+            if 'filepath' in locals() and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+            raise ValueError(f"檔案上傳失敗: {upload_err}")
     except Exception as e:
-        if 'task_id' in locals(): tasks_collection.delete_one({'_id': task_id})
         return handle_route_exception(e, 'decompress_manual')
 
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
@@ -537,12 +606,17 @@ def get_decompression_logs():
     try:
         if not ADMIN_SECRET:
             return jsonify({'error': '伺服器未設定管理員密碼'}), 500
-        
-        provided_secret = request.args.get('secret')
+
+        provided_secret = request.args.get('secret', '')
         if not provided_secret:
             return jsonify({'error': '缺少管理員密碼'}), 401
-        
-        if not secrets.compare_digest(provided_secret, ADMIN_SECRET):
+
+        # 使用 secrets.compare_digest 防止時序攻擊
+        # 確保兩個參數都是字串類型
+        try:
+            if not secrets.compare_digest(str(provided_secret), str(ADMIN_SECRET)):
+                return jsonify({'error': '管理員密碼錯誤'}), 403
+        except Exception:
             return jsonify({'error': '管理員密碼錯誤'}), 403
 
         pipeline = [
