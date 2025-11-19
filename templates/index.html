@@ -193,6 +193,23 @@
                                     <p class="text-xs text-gray-500 dark:text-gray-400 ml-7">💡 加密後會產生隨機密碼，下載時會提供密碼檔</p>
                                 </div>
                             </div>
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                                <div class="flex items-center mb-3">
+                                    <input type="checkbox" id="use_master_pass" name="use_master_pass" class="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600">
+                                    <label for="use_master_pass" class="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300">🔐 啟用特殊密碼 (進階)</label>
+                                </div>
+                                <div id="master-password-inputs" class="hidden space-y-3 ml-6 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                                    <div>
+                                        <label for="master_password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">特殊密碼:</label>
+                                        <input type="password" id="master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm" placeholder="設定一個自訂密碼">
+                                    </div>
+                                    <div>
+                                        <label for="master_password_interval" class="block text-sm font-medium text-gray-700 dark:text-gray-300">每隔幾層使用特殊密碼:</label>
+                                        <input type="number" id="master_password_interval" name="master_password_interval" value="10" min="1" max="100" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm">
+                                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">例如：設定 10 表示第 10、20、30... 層使用此密碼</p>
+                                    </div>
+                                </div>
+                            </div>
                         </fieldset>
                         <div class="mt-6 text-center"><button type="button" id="start-compress-btn" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
@@ -887,6 +904,19 @@
                         checkbox.addEventListener('change', updateFormatString);
                     }
                 });
+
+                // 特殊密碼勾選框控制顯示/隱藏
+                if (elements.useMasterPassCheckbox && elements.masterPassInputs) {
+                    elements.useMasterPassCheckbox.addEventListener('change', function() {
+                        if (this.checked) {
+                            elements.masterPassInputs.classList.remove('hidden');
+                            writeDebugLog('特殊密碼功能已啟用');
+                        } else {
+                            elements.masterPassInputs.classList.add('hidden');
+                            writeDebugLog('特殊密碼功能已關閉');
+                        }
+                    });
+                }
 
                 const shareId = urlParams.get('share_id');
                 if (shareId) {
