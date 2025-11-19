@@ -606,6 +606,15 @@ def compress_route():
 
         logging.info(f"開始解析 multipart 數據...")
         try:
+            # 先看看 request.files 和 request.form 裡有什麼
+            logging.info(f"request.files keys: {list(request.files.keys())}")
+            logging.info(f"request.form keys: {list(request.form.keys())}")
+
+            # 如果 files 裡有東西，列出所有 keys
+            if request.files:
+                for key in request.files.keys():
+                    logging.info(f"  - files['{key}']: {request.files[key]}")
+
             file = request.files.get('file')
             logging.info(f"✅ 成功獲取檔案物件: {file}")
             if file:
