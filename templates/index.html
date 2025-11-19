@@ -12,7 +12,11 @@
             document.documentElement.classList.remove('dark');
         }
     </script>
-    
+
+    <!-- 預連接到 CDN 以加速載入 -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = { darkMode: 'class' }
