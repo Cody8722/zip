@@ -109,6 +109,43 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 # --- 通用輔助函式 ---
+def calculate_encrypt_layers(encrypt_mode, iterations, manual_layers=None, multiple_interval=3, arithmetic_start=1, arithmetic_diff=2):
+    """
+    根據加密模式計算需要加密的層數列表
+
+    Args:
+        encrypt_mode: 加密模式 ('none', 'all', 'odd', 'even', 'multiple', 'arithmetic', 'manual')
+        iterations: 總層數
+        manual_layers: 手動指定的層數列表
+        multiple_interval: 倍數間隔
+        arithmetic_start: 等差數列首項
+        arithmetic_diff: 等差數列公差
+
+    Returns:
+        set: 需要加密的層數集合
+    """
+    if encrypt_mode == 'none':
+        return set()
+    elif encrypt_mode == 'all':
+        return set(range(1, iterations + 1))
+    elif encrypt_mode == 'odd':
+        return {i for i in range(1, iterations + 1) if i % 2 != 0}
+    elif encrypt_mode == 'even':
+        return {i for i in range(1, iterations + 1) if i % 2 == 0}
+    elif encrypt_mode == 'multiple':
+        return {i for i in range(multiple_interval, iterations + 1, multiple_interval)}
+    elif encrypt_mode == 'arithmetic':
+        layers = set()
+        current = arithmetic_start
+        while current <= iterations:
+            layers.add(current)
+            current += arithmetic_diff
+        return layers
+    elif encrypt_mode == 'manual':
+        return set(manual_layers) if manual_layers else set()
+    else:
+        return set()
+
 def generate_password(filename, salt, length=16):
     """
     使用檔案名稱和鹽通過 SHA-256 生成確定性密碼
@@ -190,11 +227,24 @@ def validate_compression_params(params):
         if interval > iterations:
             raise ValueError("特殊密碼間隔不能大於總壓縮層數。")
 
-    # 驗證 manual_layers
-    manual_layers = params.get('manual_layers', [])
-    for layer in manual_layers:
-        if not isinstance(layer, int) or layer < 1 or layer > iterations:
-            raise ValueError(f"手動設定的密碼層 {layer} 超出有效範圍（1-{iterations}）。")
+    # 驗證加密模式參數
+    encrypt_mode = params.get('encrypt_mode', 'none')
+    if encrypt_mode == 'manual':
+        manual_layers = params.get('manual_layers', [])
+        for layer in manual_layers:
+            if not isinstance(layer, int) or layer < 1 or layer > iterations:
+                raise ValueError(f"手動設定的密碼層 {layer} 超出有效範圍（1-{iterations}）。")
+    elif encrypt_mode == 'multiple':
+        multiple_interval = params.get('multiple_interval', 0)
+        if not isinstance(multiple_interval, int) or multiple_interval < 2:
+            raise ValueError("倍數間隔必須至少為 2。")
+    elif encrypt_mode == 'arithmetic':
+        arithmetic_start = params.get('arithmetic_start', 0)
+        arithmetic_diff = params.get('arithmetic_diff', 0)
+        if not isinstance(arithmetic_start, int) or arithmetic_start < 1 or arithmetic_start > iterations:
+            raise ValueError(f"等差數列首項必須在 1 到 {iterations} 之間。")
+        if not isinstance(arithmetic_diff, int) or arithmetic_diff < 1:
+            raise ValueError("等差數列公差必須至少為 1。")
 
     # 驗證 formats
     if not params.get('formats') or len(params['formats']) == 0:
@@ -272,6 +322,18 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
         # 為本次任務生成唯一的鹽（基於 task_id 和時間戳）
         task_salt = secrets.token_hex(TASK_SALT_BYTES)
         password_file_content += f"# 任務鹽值 (Salt): {task_salt}\n"
+
+        # 計算需要加密的層數
+        encrypt_layers = calculate_encrypt_layers(
+            params['encrypt_mode'],
+            iterations,
+            params.get('manual_layers'),
+            params.get('multiple_interval', 3),
+            params.get('arithmetic_start', 1),
+            params.get('arithmetic_diff', 2)
+        )
+        logging.info(f"加密模式: {params['encrypt_mode']}, 加密層數: {sorted(encrypt_layers)}")
+
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
         for i in range(1, iterations + 1):
@@ -315,9 +377,11 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 filename_for_password = random_filename
 
             password = None; log_pwd = "(無密碼)"
+            # 優先檢查特殊密碼
             if params['use_master_pass'] and i % params['master_pass_interval'] == 0:
                 password = params['master_pass']; log_pwd = "(特殊密碼層)"
-            elif (params['encrypt_odd'] and i % 2 != 0) or (not params['encrypt_odd'] and i in params['manual_layers']):
+            # 然後檢查是否在加密層數列表中
+            elif i in encrypt_layers:
                 if format_name in ('zip', '7z'):
                     # 使用檔名和任務鹽生成 SHA-256 密碼
                     password = generate_password(filename_for_password, task_salt)
@@ -636,7 +700,22 @@ def compress_route():
         try:
             iterations = int(request.form.get('iterations', 5))
             master_pass_interval = int(request.form.get('master_password_interval', '10'))
-            manual_layers = [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()]
+
+            # 解析加密模式參數
+            encrypt_mode = request.form.get('encrypt_mode', 'none')
+            manual_layers = []
+            multiple_interval = 3
+            arithmetic_start = 1
+            arithmetic_diff = 2
+
+            if encrypt_mode == 'manual':
+                manual_layers = [int(x.strip()) for x in request.form.get('manual_layers', '').split(',') if x.strip()]
+            elif encrypt_mode == 'multiple':
+                multiple_interval = int(request.form.get('multiple_interval', '3'))
+            elif encrypt_mode == 'arithmetic':
+                arithmetic_start = int(request.form.get('arithmetic_start', '1'))
+                arithmetic_diff = int(request.form.get('arithmetic_diff', '2'))
+
         except ValueError:
             raise ValueError("參數格式錯誤，請檢查數字欄位。")
 
@@ -644,8 +723,11 @@ def compress_route():
             'raw_filename': file.filename,
             'expected_filename': file.filename,
             'iterations': iterations,
-            'encrypt_odd': request.form.get('encrypt_mode', 'odd') == 'odd',
+            'encrypt_mode': encrypt_mode,
             'manual_layers': manual_layers,
+            'multiple_interval': multiple_interval,
+            'arithmetic_start': arithmetic_start,
+            'arithmetic_diff': arithmetic_diff,
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
             'use_master_pass': request.form.get('use_master_pass') == 'on',
             'master_pass': request.form.get('master_password'),
