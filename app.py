@@ -168,6 +168,49 @@ def generate_password(filename, salt, length=16):
     password = password.replace('=', '').replace('-', '').replace('_', '')
     return password[:length]
 
+def regenerate_passwords_from_metadata(metadata, master_pass=None):
+    """
+    從元數據重新生成密碼文件內容
+
+    Args:
+        metadata: 包含 task_salt 和 layers 的字典
+        master_pass: 特殊密碼（如果有）
+
+    Returns:
+        密碼文件內容字串
+    """
+    if not metadata or 'task_salt' not in metadata or 'layers' not in metadata:
+        return None
+
+    task_salt = metadata['task_salt']
+    layers = metadata['layers']
+
+    content = "--- 壓縮密碼表 ---\n"
+    content += f"# 任務鹽值 (Salt): {task_salt}\n"
+
+    for layer in layers:
+        layer_num = layer['num']
+        filename = layer['filename']
+        has_password = layer.get('has_password', False)
+        is_master = layer.get('is_master', False)
+        pwd_length = layer.get('length', 16)
+
+        if not has_password:
+            log_pwd = "(無密碼)"
+        elif is_master:
+            if master_pass:
+                log_pwd = "(特殊密碼層)"
+            else:
+                log_pwd = "(特殊密碼層 - 需要您設定的特殊密碼才能解壓)"
+        else:
+            # 重新生成密碼
+            password = generate_password(filename, task_salt, pwd_length)
+            log_pwd = f"{password} (長度: {pwd_length})"
+
+        content += f"第 {layer_num} 層 ({filename}): {log_pwd}\n"
+
+    return content
+
 def safe_db_operation(operation_func, operation_name="資料庫操作"):
     """
     安全執行資料庫操作的包裝函數
@@ -331,10 +374,14 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
     generated_files = []
     try:
         iterations = params['iterations']
-        password_file_content = "--- 壓縮密碼表 ---\n"
         # 為本次任務生成唯一的鹽（基於 task_id 和時間戳）
         task_salt = secrets.token_hex(TASK_SALT_BYTES)
-        password_file_content += f"# 任務鹽值 (Salt): {task_salt}\n"
+
+        # 新版本：使用元數據結構（不存儲明文密碼）
+        password_metadata = {
+            'task_salt': task_salt,
+            'layers': []
+        }
 
         # 計算需要加密的層數
         encrypt_layers = calculate_encrypt_layers(
@@ -389,13 +436,20 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 output_filename = os.path.join(OUTPUT_FOLDER, random_filename)
                 filename_for_password = random_filename
 
-            password = None; log_pwd = "(無密碼)"
+            password = None
+            has_password = False
+            is_master = False
+            pwd_length = 16
+
             # 優先檢查特殊密碼
             if params['use_master_pass'] and i % params['master_pass_interval'] == 0:
-                password = params['master_pass']; log_pwd = "(特殊密碼層)"
+                password = params['master_pass']
+                has_password = True
+                is_master = True
             # 然後檢查是否在加密層數列表中
             elif i in encrypt_layers:
                 if format_name in ('zip', '7z'):
+                    has_password = True
                     # 確定此層的密碼長度
                     if params.get('use_custom_length'):
                         # 優先使用特定層的配置
@@ -405,8 +459,16 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
 
                     # 使用檔名和任務鹽生成 SHA-256 密碼
                     password = generate_password(filename_for_password, task_salt, pwd_length)
-                    log_pwd = f"{password} (長度: {pwd_length})"
-            password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
+
+            # 記錄到元數據（不含明文密碼）
+            layer_metadata = {
+                'num': i,
+                'filename': os.path.basename(output_filename),
+                'has_password': has_password,
+                'is_master': is_master,
+                'length': pwd_length if has_password and not is_master else None
+            }
+            password_metadata['layers'].append(layer_metadata)
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
 
@@ -432,10 +494,13 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             file_id = fs.put(f_in, filename=os.path.basename(current_file))
         os.remove(current_file)
         delete_token = secrets.token_hex(DELETE_TOKEN_BYTES)
+
+        # 新版本：存儲元數據而非明文密碼（提升安全性）
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 'progress': 100,
             'result_file_id': str(file_id), 'result_filename': os.path.basename(current_file),
-            'password_file_content': password_file_content, 'delete_token': delete_token,
+            'password_metadata': password_metadata,  # 新版本：元數據
+            'delete_token': delete_token,
             'original_size': original_size, 'final_size': final_size, 'compression_ratio': round(compression_ratio, 2)
         }})
         update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
@@ -1030,7 +1095,17 @@ def task_status(task_id):
     try:
         task = tasks_collection.find_one({'_id': ObjectId(task_id)})
         if task:
-            task['_id'] = str(task['_id']); return jsonify(task)
+            task['_id'] = str(task['_id'])
+
+            # 向下兼容：如果有新格式元數據但沒有舊格式內容，則重新生成
+            if task.get('password_metadata') and not task.get('password_file_content'):
+                master_pass = task.get('params', {}).get('master_pass')
+                task['password_file_content'] = regenerate_passwords_from_metadata(
+                    task['password_metadata'],
+                    master_pass
+                )
+
+            return jsonify(task)
         return jsonify({'error': '找不到任務'}), 404
     except Exception as e:
         return handle_route_exception(e, 'status')
@@ -1112,6 +1187,47 @@ def generate_qr_code(task_id):
         return send_file(img_io, mimetype='image/png')
     except Exception as e:
         return handle_route_exception(e, 'qrcode')
+
+@app.route('/download-password/<task_id>')
+def download_password_file(task_id):
+    """
+    下載密碼文件（支持新舊格式）
+    - 舊格式：直接使用 password_file_content
+    - 新格式：從 password_metadata 重新生成
+    """
+    try:
+        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        if not task:
+            return "任務不存在。", 404
+
+        password_content = None
+
+        # 優先使用舊格式（向下兼容）
+        if task.get('password_file_content'):
+            password_content = task['password_file_content']
+        # 如果沒有舊格式，從新格式元數據重新生成
+        elif task.get('password_metadata'):
+            master_pass = task.get('params', {}).get('master_pass')
+            password_content = regenerate_passwords_from_metadata(
+                task['password_metadata'],
+                master_pass
+            )
+
+        if not password_content:
+            return "此任務沒有密碼信息。", 404
+
+        # 創建文本文件響應
+        password_bytes = io.BytesIO(password_content.encode('utf-8'))
+        response = send_file(
+            password_bytes,
+            mimetype='text/plain',
+            as_attachment=True,
+            download_name='passwords.txt'
+        )
+        response.headers['Content-Disposition'] = "attachment; filename*=UTF-8''passwords.txt"
+        return response
+    except Exception as e:
+        return handle_route_exception(e, 'download-password')
 
 @app.route('/download/<task_id>')
 def download_file(task_id):
