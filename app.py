@@ -246,6 +246,19 @@ def validate_compression_params(params):
         if not isinstance(arithmetic_diff, int) or arithmetic_diff < 1:
             raise ValueError("等差數列公差必須至少為 1。")
 
+    # 驗證自訂密碼長度配置
+    if params.get('use_custom_length'):
+        default_length = params.get('default_password_length', 16)
+        if not isinstance(default_length, int) or default_length < 8 or default_length > 64:
+            raise ValueError("預設密碼長度必須在 8 到 64 之間。")
+
+        password_length_config = params.get('password_length_config', {})
+        for layer, length in password_length_config.items():
+            if not isinstance(layer, int) or layer < 1 or layer > iterations:
+                raise ValueError(f"密碼長度配置中的層數 {layer} 超出有效範圍（1-{iterations}）。")
+            if not isinstance(length, int) or length < 8 or length > 64:
+                raise ValueError(f"第 {layer} 層的密碼長度必須在 8 到 64 之間。")
+
     # 驗證 formats
     if not params.get('formats') or len(params['formats']) == 0:
         raise ValueError("至少需要選擇一種壓縮格式。")
@@ -383,9 +396,16 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             # 然後檢查是否在加密層數列表中
             elif i in encrypt_layers:
                 if format_name in ('zip', '7z'):
+                    # 確定此層的密碼長度
+                    if params.get('use_custom_length'):
+                        # 優先使用特定層的配置
+                        pwd_length = params['password_length_config'].get(i, params['default_password_length'])
+                    else:
+                        pwd_length = 16  # 默認長度
+
                     # 使用檔名和任務鹽生成 SHA-256 密碼
-                    password = generate_password(filename_for_password, task_salt)
-                    log_pwd = password
+                    password = generate_password(filename_for_password, task_salt, pwd_length)
+                    log_pwd = f"{password} (長度: {pwd_length})"
             password_file_content += f"第 {i} 層 ({os.path.basename(output_filename)}): {log_pwd}\n"
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
@@ -716,6 +736,25 @@ def compress_route():
                 arithmetic_start = int(request.form.get('arithmetic_start', '1'))
                 arithmetic_diff = int(request.form.get('arithmetic_diff', '2'))
 
+            # 解析自訂密碼長度配置
+            use_custom_length = request.form.get('use_custom_length') == 'on'
+            password_length_config = {}
+            default_password_length = 16
+
+            if use_custom_length:
+                default_password_length = int(request.form.get('default_password_length', '16'))
+                config_str = request.form.get('password_length_config', '').strip()
+                if config_str:
+                    # 解析格式：1:32, 5:24, 10:32
+                    for item in config_str.split(','):
+                        item = item.strip()
+                        if ':' in item:
+                            layer, length = item.split(':', 1)
+                            layer = int(layer.strip())
+                            length = int(length.strip())
+                            if 8 <= length <= 64:  # 限制密碼長度範圍
+                                password_length_config[layer] = length
+
         except ValueError:
             raise ValueError("參數格式錯誤，請檢查數字欄位。")
 
@@ -731,7 +770,10 @@ def compress_route():
             'formats': [x.strip() for x in request.form.get('formats', 'zip,7z,targz').split(',') if x.strip()],
             'use_master_pass': request.form.get('use_master_pass') == 'on',
             'master_pass': request.form.get('master_password'),
-            'master_pass_interval': master_pass_interval
+            'master_pass_interval': master_pass_interval,
+            'use_custom_length': use_custom_length,
+            'password_length_config': password_length_config,
+            'default_password_length': default_password_length
         }
 
         # 驗證壓縮參數
