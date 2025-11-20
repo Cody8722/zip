@@ -152,12 +152,17 @@
         .toast-close:hover { opacity: 1; }
 
         /* 確認對話框改進 */
-        .confirm-dialog {
-            max-width: 400px;
-        }
-
         .confirm-dialog .modal-content {
             padding: 1.5rem;
+            max-width: 600px;
+            width: 90%;
+        }
+
+        @media (max-width: 640px) {
+            .confirm-dialog .modal-content {
+                max-width: 90%;
+                width: 90%;
+            }
         }
 
         /* 進度條動畫改進 */
