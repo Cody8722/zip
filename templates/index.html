@@ -759,6 +759,7 @@
                 let currentTaskId = null;
                 let currentConfirmAction = null;
                 let pollingTimeoutId = null;  // 保存輪詢計時器ID
+                let currentXHR = null;  // 保存當前上傳的 XHR 對象，用於取消上傳
 
                 function setupDropZone(dropZone, fileInput, fileNameDisplay, fileInfoId) {
                     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -798,12 +799,13 @@
                     elements.progressBar.style.width = '0%';
                     elements.progressPercentage.textContent = '0%';
                     elements.progressStatus.textContent = '準備開始...';
-                    
+
                     elements.uploadProgressContainer.classList.remove('hidden');
                     elements.uploadProgressBar.style.width = '0%';
                     elements.uploadProgressPercentage.textContent = '0%';
-                    
+
                     const xhr = new XMLHttpRequest();
+                    currentXHR = xhr;  // 保存 XHR 對象以便取消
                     xhr.open('POST', endpoint, true);
                     writeDebugLog(`XHR: POST ${endpoint}`);
 
@@ -817,6 +819,7 @@
 
                     xhr.onload = () => {
                         writeDebugLog(`XHR: 收到回應 - 狀態碼 ${xhr.status}`);
+                        currentXHR = null;  // 清除 XHR 對象
                         elements.uploadProgressContainer.classList.add('hidden');
                         try {
                             const data = JSON.parse(xhr.responseText);
@@ -840,14 +843,27 @@
                             elements.cancelButton.classList.add('hidden');
                         }
                     };
-                    
+
                     xhr.onerror = () => {
                         writeDebugLog("XHR: 發生網路錯誤。", null, true);
+                        currentXHR = null;  // 清除 XHR 對象
                         elements.uploadProgressContainer.classList.add('hidden');
                         Toast.error('上傳時發生網路錯誤，請檢查網路連線');
                         elements.logBox.textContent = '❌ 上傳時發生網路錯誤。';
                         elements.progressStatus.textContent = "失敗";
                         elements.cancelButton.classList.add('hidden');
+                    };
+
+                    xhr.onabort = () => {
+                        writeDebugLog("XHR: 上傳已被取消。");
+                        currentXHR = null;  // 清除 XHR 對象
+                        elements.uploadProgressContainer.classList.add('hidden');
+                        Toast.info('上傳已取消');
+                        elements.logBox.textContent = '⚠️ 上傳已被使用者取消。';
+                        elements.progressStatus.textContent = "已取消";
+                        elements.cancelButton.classList.add('hidden');
+                        elements.progressSection.classList.add('hidden');
+                        elements.mainView.classList.remove('hidden');
                     };
                     
                     if (formData instanceof FormData) {
@@ -1241,8 +1257,27 @@
                     currentConfirmAction = null;
                 });
                 elements.cancelButton.addEventListener('click', async () => {
-                    writeDebugLog(`取消按鈕點擊，任務 ID: ${currentTaskId}`);
-                    if (currentTaskId) {
+                    writeDebugLog(`取消按鈕點擊，上傳中: ${!!currentXHR}, 任務 ID: ${currentTaskId}`);
+
+                    // 檢查是否在上傳階段（有 XHR 但還沒有 task_id）
+                    if (currentXHR && !currentTaskId) {
+                        const confirmed = await ConfirmDialog.show(
+                            '確認取消上傳',
+                            '您確定要取消當前的檔案上傳嗎？\n上傳進度將會遺失。'
+                        );
+                        if (confirmed) {
+                            try {
+                                writeDebugLog('取消上傳：中止 XHR 請求');
+                                currentXHR.abort();  // 中止上傳
+                                Toast.info('上傳已取消');
+                            } catch (error) {
+                                writeDebugLog(`取消上傳失敗: ${error.message}`, null, true);
+                                Toast.error(`取消失敗: ${error.message}`);
+                            }
+                        }
+                    }
+                    // 檢查是否已經有 task_id（處理階段）
+                    else if (currentTaskId) {
                         const confirmed = await ConfirmDialog.show(
                             '確認取消任務',
                             '您確定要取消當前的壓縮/解壓縮任務嗎？\n已處理的進度將會遺失。\n\n注意：若當前層正在處理中，將會在該層完成後取消。'
