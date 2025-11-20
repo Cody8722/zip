@@ -613,12 +613,19 @@ def compress_route():
         logging.info(f"接收到檔案: {file.filename if file else 'None'}")
 
         if not file:
-            # 如果沒有 file，檢查是否有其他 keys
+            # 檢查是否為被取消的上傳（有 Content-Length 但無 files/form 數據）
+            content_length = request.headers.get('Content-Length')
+            if content_length and not request.files.keys() and not request.form.keys():
+                # 這是被取消的上傳，靜默處理（不記錄錯誤堆疊）
+                logging.info(f"⚠️ 檢測到被取消的上傳請求 (Content-Length: {content_length}，但無數據)")
+                return jsonify({'error': '上傳已取消'}), 400
+
+            # 其他情況下記錄詳細信息
             if request.files:
                 logging.info(f"request.files 內容: {[(k, v.filename) for k, v in request.files.items()]}")
             if request.form:
                 logging.info(f"request.form 內容: {dict(request.form)}")
-            logging.error("❌ 無法獲取檔案，可能是 Zeabur 反向代理限制或 multipart 解析失敗")
+            logging.error("❌ 無法獲取檔案，可能是反向代理限制或 multipart 解析失敗")
 
         validate_file(file, mode='compress')
 
@@ -684,6 +691,14 @@ def decompress_manual_route():
 
         file = request.files.get('file')
         logging.info(f"接收到檔案: {file.filename if file else 'None'}")
+
+        if not file:
+            # 檢查是否為被取消的上傳（有 Content-Length 但無 files/form 數據）
+            content_length = request.headers.get('Content-Length')
+            if content_length and not request.files.keys() and not request.form.keys():
+                # 這是被取消的上傳，靜默處理（不記錄錯誤堆疊）
+                logging.info(f"⚠️ 檢測到被取消的上傳請求 (Content-Length: {content_length}，但無數據)")
+                return jsonify({'error': '上傳已取消'}), 400
 
         validate_file(file, mode='decompress')
         
