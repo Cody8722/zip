@@ -59,7 +59,7 @@ MIN_ITERATIONS = 1   # 至少 1 層
 MIN_MASTER_PASS_INTERVAL = 1  # 特殊密碼間隔至少 1 層
 
 # --- 其他常數 ---
-CANCEL_CHECK_INTERVAL = 5  # 每 5 層檢查一次取消狀態，平衡性能與響應速度
+CANCEL_CHECK_INTERVAL = 1  # 每 1 層檢查一次取消狀態，提高取消響應速度
 FILENAME_UNIQUE_SUFFIX_BYTES = 2  # 檔名唯一性後綴長度（2 bytes = 4 個字符）
 TASK_SALT_BYTES = 16  # 任務鹽值長度（16 bytes = 32 個字符）
 DELETE_TOKEN_BYTES = 16  # 刪除令牌長度（16 bytes = 32 個字符）
@@ -275,27 +275,26 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
         formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
         current_file = original_file
         for i in range(1, iterations + 1):
-            # 每隔幾層檢查一次取消狀態，避免頻繁查詢資料庫
-            if i % CANCEL_CHECK_INTERVAL == 0 or i == 1:
-                task_status = safe_db_operation(
-                    lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
-                    "檢查取消狀態"
+            # 在每層開始前檢查取消狀態
+            task_status = safe_db_operation(
+                lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
+                "檢查取消狀態"
+            )
+            if task_status and task_status.get('cancel_requested'):
+                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
+                safe_db_operation(
+                    lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
+                    "設定取消狀態"
                 )
-                if task_status and task_status.get('cancel_requested'):
-                    update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
-                    safe_db_operation(
-                        lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
-                        "設定取消狀態"
-                    )
-                    # 清理已生成的中間檔案
-                    for temp_file in generated_files:
-                        if os.path.exists(temp_file):
-                            try:
-                                os.remove(temp_file)
-                                logging.info(f"已清理取消任務的中間檔案: {temp_file}")
-                            except Exception as e:
-                                logging.error(f"清理中間檔案失敗: {e}")
-                    return
+                # 清理已生成的中間檔案
+                for temp_file in generated_files:
+                    if os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                            logging.info(f"已清理取消任務的中間檔案: {temp_file}")
+                        except Exception as e:
+                            logging.error(f"清理中間檔案失敗: {e}")
+                return
             format_name = params['formats'][(i - 1) % len(params['formats'])]
 
             # 最後一層使用原始檔名，其他層使用隨機檔名
@@ -399,8 +398,6 @@ def decompression_worker(task_id_str):
     if not task: return
     params = task['params']; original_file = params['original_file']
     output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
-    # 用於檢查取消狀態的標誌
-    cancel_check_interval = 5
     # 追蹤已處理的中間檔案
     processed_files = []
     try:
@@ -410,27 +407,26 @@ def decompression_worker(task_id_str):
         current_file = original_file; total_layers = len(password_list)
         total_uncompressed_size = 0
         for i, layer_info in enumerate(reversed(password_list)):
-            # 優化取消檢查頻率
-            if i % cancel_check_interval == 0 or i == 0:
-                task_status = safe_db_operation(
-                    lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
-                    "檢查取消狀態"
+            # 在每層開始前檢查取消狀態
+            task_status = safe_db_operation(
+                lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
+                "檢查取消狀態"
+            )
+            if task_status and task_status.get('cancel_requested'):
+                update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
+                safe_db_operation(
+                    lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
+                    "設定取消狀態"
                 )
-                if task_status and task_status.get('cancel_requested'):
-                    update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
-                    safe_db_operation(
-                        lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
-                        "設定取消狀態"
-                    )
-                    # 清理已處理的中間檔案
-                    for temp_file in processed_files:
-                        if os.path.exists(temp_file):
-                            try:
-                                os.remove(temp_file)
-                                logging.info(f"已清理取消任務的中間檔案: {temp_file}")
-                            except Exception as e:
-                                logging.error(f"清理中間檔案失敗: {e}")
-                    return
+                # 清理已處理的中間檔案
+                for temp_file in processed_files:
+                    if os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                            logging.info(f"已清理取消任務的中間檔案: {temp_file}")
+                        except Exception as e:
+                            logging.error(f"清理中間檔案失敗: {e}")
+                return
             layer_num = total_layers - i
             password = layer_info['password']
             if password == 'MASTER_PASSWORD_PLACEHOLDER':

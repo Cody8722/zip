@@ -1240,7 +1240,7 @@
                     if (currentTaskId) {
                         const confirmed = await ConfirmDialog.show(
                             '確認取消任務',
-                            '您確定要取消當前的壓縮/解壓縮任務嗎？\n已處理的進度將會遺失。'
+                            '您確定要取消當前的壓縮/解壓縮任務嗎？\n已處理的進度將會遺失。\n\n注意：若當前層正在處理中，將會在該層完成後取消。'
                         );
                         if (confirmed) {
                             try {
@@ -1251,16 +1251,18 @@
                                     writeDebugLog('已停止狀態輪詢');
                                 }
 
-                                await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
-                                Toast.info('任務已取消');
+                                const response = await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                                if (!response.ok) {
+                                    throw new Error('取消請求失敗');
+                                }
 
-                                // 更新UI狀態
-                                elements.cancelButton.classList.add('hidden');
-                                elements.progressSection.classList.add('hidden');
-                                elements.resultSection.classList.add('hidden');
-                                elements.mainView.classList.remove('hidden');
-                                currentTaskId = null;
+                                Toast.info('取消請求已發送，正在等待當前層完成...');
+                                writeDebugLog('取消請求已發送到後端');
+
+                                // 繼續輪詢以顯示取消狀態
+                                checkStatus(currentTaskId);
                             } catch (error) {
+                                writeDebugLog(`取消失敗: ${error.message}`, null, true);
                                 Toast.error(`取消失敗: ${error.message}`);
                             }
                         }
