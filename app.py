@@ -23,6 +23,7 @@ import secrets
 import smtplib
 from email.message import EmailMessage
 from concurrent.futures import ThreadPoolExecutor
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
@@ -40,6 +41,7 @@ MONGO_URI = os.environ.get('MONGO_URI')
 ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
 MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+PASSWORD_ENCRYPTION_KEY = os.environ.get('PASSWORD_ENCRYPTION_KEY')  # Fernet 加密密鑰
 
 # --- 執行緒池與任務限制 ---
 MAX_CONCURRENT_TASKS = int(os.environ.get('MAX_CONCURRENT_TASKS', 3))
@@ -168,6 +170,77 @@ def generate_password(filename, salt, length=16):
     password = password.replace('=', '').replace('-', '').replace('_', '')
     return password[:length]
 
+
+def get_cipher():
+    """
+    獲取 Fernet 加密器實例
+
+    Returns:
+        Fernet 加密器，如果密鑰未設置則返回 None
+    """
+    if not PASSWORD_ENCRYPTION_KEY:
+        logging.warning("⚠️ PASSWORD_ENCRYPTION_KEY 未設置，密碼將以元數據形式存儲（不加密）")
+        return None
+    try:
+        return Fernet(PASSWORD_ENCRYPTION_KEY.encode() if isinstance(PASSWORD_ENCRYPTION_KEY, str) else PASSWORD_ENCRYPTION_KEY)
+    except Exception as e:
+        logging.error(f"❌ 無法初始化加密器: {e}")
+        return None
+
+
+def encrypt_password(password):
+    """
+    加密密碼
+
+    Args:
+        password: 明文密碼字串
+
+    Returns:
+        加密後的密碼（Base64 字串），如果加密失敗則返回 None
+    """
+    if not password:
+        return None
+
+    cipher = get_cipher()
+    if not cipher:
+        # 如果沒有加密密鑰，返回 None（將使用元數據方式）
+        return None
+
+    try:
+        encrypted = cipher.encrypt(password.encode('utf-8'))
+        return base64.urlsafe_b64encode(encrypted).decode('utf-8')
+    except Exception as e:
+        logging.error(f"❌ 加密密碼失敗: {e}")
+        return None
+
+
+def decrypt_password(encrypted_password):
+    """
+    解密密碼
+
+    Args:
+        encrypted_password: 加密的密碼字串（Base64）
+
+    Returns:
+        解密後的明文密碼，如果解密失敗則返回 None
+    """
+    if not encrypted_password:
+        return None
+
+    cipher = get_cipher()
+    if not cipher:
+        logging.error("❌ 無法解密：未設置加密密鑰")
+        return None
+
+    try:
+        encrypted_bytes = base64.urlsafe_b64decode(encrypted_password.encode('utf-8'))
+        decrypted = cipher.decrypt(encrypted_bytes)
+        return decrypted.decode('utf-8')
+    except Exception as e:
+        logging.error(f"❌ 解密密碼失敗: {e}")
+        return None
+
+
 def regenerate_passwords_from_metadata(metadata, master_pass=None):
     """
     從元數據重新生成密碼文件內容
@@ -203,9 +276,19 @@ def regenerate_passwords_from_metadata(metadata, master_pass=None):
             else:
                 log_pwd = "(特殊密碼層 - 需要您設定的特殊密碼才能解壓)"
         else:
-            # 重新生成密碼
-            password = generate_password(filename, task_salt, pwd_length)
-            log_pwd = f"{password} (長度: {pwd_length})"
+            # 優先嘗試從加密密碼解密
+            encrypted_pwd = layer.get('encrypted_password')
+            if encrypted_pwd:
+                # 新版本：使用加密存儲的密碼
+                password = decrypt_password(encrypted_pwd)
+                if password:
+                    log_pwd = f"{password} (長度: {len(password)}, 已加密)"
+                else:
+                    log_pwd = "(密碼解密失敗 - 請檢查加密密鑰)"
+            else:
+                # 舊版本：從元數據重新生成密碼
+                password = generate_password(filename, task_salt, pwd_length)
+                log_pwd = f"{password} (長度: {pwd_length})"
 
         content += f"第 {layer_num} 層 ({filename}): {log_pwd}\n"
 
@@ -460,7 +543,7 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                     # 使用檔名和任務鹽生成 SHA-256 密碼
                     password = generate_password(filename_for_password, task_salt, pwd_length)
 
-            # 記錄到元數據（不含明文密碼）
+            # 記錄到元數據
             layer_metadata = {
                 'num': i,
                 'filename': os.path.basename(output_filename),
@@ -468,6 +551,18 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 'is_master': is_master,
                 'length': pwd_length if has_password and not is_master else None
             }
+
+            # 如果有密碼且不是主密碼，嘗試加密存儲
+            if password and not is_master:
+                encrypted_pwd = encrypt_password(password)
+                if encrypted_pwd:
+                    # 使用加密存儲（安全）
+                    layer_metadata['encrypted_password'] = encrypted_pwd
+                    logging.info(f"✅ 第 {i} 層密碼已加密存儲")
+                else:
+                    # 加密失敗，記錄警告（將使用元數據方式重新生成）
+                    logging.warning(f"⚠️ 第 {i} 層密碼加密失敗，將使用元數據方式")
+
             password_metadata['layers'].append(layer_metadata)
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
