@@ -24,6 +24,8 @@ import smtplib
 from email.message import EmailMessage
 from concurrent.futures import ThreadPoolExecutor
 from cryptography.fernet import Fernet
+import redis
+import json
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
@@ -38,6 +40,7 @@ for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
 
 # --- 資料庫與環境變數 ---
 MONGO_URI = os.environ.get('MONGO_URI')
+REDIS_URL = os.environ.get('REDIS_URL')  # Redis 快取 URL (選填)
 ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
 MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
@@ -78,6 +81,20 @@ try:
     fs = GridFS(db)
 except Exception as e:
     logging.error(f"❌ 應用程式啟動失敗: {e}")
+
+# --- Redis 快取（選填） ---
+redis_client = None
+CACHE_TASK_TTL = 60  # 任務快取過期時間（秒）
+try:
+    if REDIS_URL:
+        redis_client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=3)
+        redis_client.ping()
+        logging.info("✅ 成功連線至 Redis！")
+    else:
+        logging.info("ℹ️  未設置 REDIS_URL，將不使用快取功能")
+except Exception as e:
+    logging.warning(f"⚠️  Redis 連線失敗，將繼續運行但不使用快取: {e}")
+    redis_client = None
 
 # --- 清理函數 ---
 def cleanup_on_exit():
@@ -319,8 +336,100 @@ def update_task_log(task_id, message, is_progress_text=False):
 
 def update_task_progress(task_id, progress):
     def _update():
-        return tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
+        result = tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
+        # 更新快取中的進度
+        if redis_client:
+            try:
+                cache_key = f"task:{task_id}"
+                redis_client.hset(cache_key, 'progress', progress)
+            except Exception as e:
+                logging.warning(f"⚠️ 更新快取失敗: {e}")
+        return result
     safe_db_operation(_update, f"更新任務進度 ({task_id})")
+
+
+def get_cached_task(task_id):
+    """
+    從快取獲取任務狀態（如果啟用 Redis）
+
+    Args:
+        task_id: 任務 ID
+
+    Returns:
+        任務數據字典，如果不在快取中則返回 None
+    """
+    if not redis_client:
+        return None
+
+    try:
+        cache_key = f"task:{task_id}"
+        cached_data = redis_client.hgetall(cache_key)
+        if cached_data:
+            # 反序列化 JSON 字段
+            if 'logs' in cached_data:
+                cached_data['logs'] = json.loads(cached_data['logs'])
+            if 'params' in cached_data:
+                cached_data['params'] = json.loads(cached_data['params'])
+            if 'password_metadata' in cached_data:
+                cached_data['password_metadata'] = json.loads(cached_data['password_metadata'])
+            # 轉換數字類型
+            if 'progress' in cached_data:
+                cached_data['progress'] = int(cached_data['progress'])
+            return cached_data
+    except Exception as e:
+        logging.warning(f"⚠️ 讀取快取失敗: {e}")
+
+    return None
+
+
+def cache_task(task_id, task_data):
+    """
+    將任務狀態存入快取
+
+    Args:
+        task_id: 任務 ID
+        task_data: 任務數據字典
+    """
+    if not redis_client:
+        return
+
+    try:
+        cache_key = f"task:{task_id}"
+        # 準備快取數據（序列化複雜類型）
+        cache_data = {}
+        for key, value in task_data.items():
+            if key == '_id':
+                cache_data['_id'] = str(value)
+            elif isinstance(value, (list, dict)):
+                cache_data[key] = json.dumps(value, ensure_ascii=False)
+            else:
+                cache_data[key] = str(value) if value is not None else ''
+
+        # 存入 Redis (使用 hash)
+        redis_client.hset(cache_key, mapping=cache_data)
+        # 設置過期時間
+        redis_client.expire(cache_key, CACHE_TASK_TTL)
+    except Exception as e:
+        logging.warning(f"⚠️ 寫入快取失敗: {e}")
+
+
+def invalidate_task_cache(task_id):
+    """
+    清除任務快取
+
+    Args:
+        task_id: 任務 ID
+    """
+    if not redis_client:
+        return
+
+    try:
+        cache_key = f"task:{task_id}"
+        redis_client.delete(cache_key)
+    except Exception as e:
+        logging.warning(f"⚠️ 清除快取失敗: {e}")
+
+
 def parse_password_text(password_text):
     password_list = []
     for line in password_text.strip().split('\n'):
@@ -567,12 +676,14 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
 
-            # 執行壓縮
+            # 執行壓縮（使用多線程加速）
             if format_name in ('zip', '7z'):
-                with py7zr.SevenZipFile(output_filename, 'w', password=password) as z:
+                # py7zr 支持多線程壓縮
+                with py7zr.SevenZipFile(output_filename, 'w', password=password, mp=True) as z:
                     z.write(current_file, os.path.basename(current_file))
             else:
-                with tarfile.open(output_filename, 'w:gz') as tf:
+                # tarfile 不支持多線程，但可以使用壓縮等級
+                with tarfile.open(output_filename, 'w:gz', compresslevel=6) as tf:
                     tf.add(current_file, arcname=os.path.basename(current_file))
 
             # 追蹤生成的檔案
@@ -682,7 +793,8 @@ def decompression_worker(task_id_str):
             
             os.makedirs(output_path, exist_ok=True)
             if layer_info['filename'].endswith(('.zip', '.7z')):
-                with py7zr.SevenZipFile(current_file, 'r', password=password) as z:
+                # py7zr 支持多線程解壓縮
+                with py7zr.SevenZipFile(current_file, 'r', password=password, mp=True) as z:
                     z.extractall(path=output_path)
             else:
                 with tarfile.open(current_file, 'r:*') as tf:
@@ -1188,20 +1300,38 @@ def cancel_task(task_id):
 @app.route('/status/<task_id>')
 def task_status(task_id):
     try:
-        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
-        if task:
-            task['_id'] = str(task['_id'])
+        # 1. 嘗試從快取獲取
+        task = get_cached_task(task_id)
 
-            # 向下兼容：如果有新格式元數據但沒有舊格式內容，則重新生成
+        # 2. 快取未命中，從資料庫讀取
+        if not task:
+            task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+            if task:
+                task['_id'] = str(task['_id'])
+
+                # 向下兼容：如果有新格式元數據但沒有舊格式內容，則重新生成
+                if task.get('password_metadata') and not task.get('password_file_content'):
+                    master_pass = task.get('params', {}).get('master_pass')
+                    task['password_file_content'] = regenerate_passwords_from_metadata(
+                        task['password_metadata'],
+                        master_pass
+                    )
+
+                # 存入快取（僅快取進行中和完成的任務）
+                if task.get('status') in ['處理中', '完成']:
+                    cache_task(task_id, task)
+            else:
+                return jsonify({'error': '找不到任務'}), 404
+        else:
+            # 從快取獲取時也需要處理密碼
             if task.get('password_metadata') and not task.get('password_file_content'):
-                master_pass = task.get('params', {}).get('master_pass')
+                master_pass = task.get('params', {}).get('master_pass') if task.get('params') else None
                 task['password_file_content'] = regenerate_passwords_from_metadata(
                     task['password_metadata'],
                     master_pass
                 )
 
-            return jsonify(task)
-        return jsonify({'error': '找不到任務'}), 404
+        return jsonify(task)
     except Exception as e:
         return handle_route_exception(e, 'status')
 
