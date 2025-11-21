@@ -359,6 +359,17 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                                <div class="flex items-center mb-3">
+                                    <input type="checkbox" id="enable_email" name="enable_email" class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
+                                    <label for="enable_email" class="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">📧 完成後寄送 Email 通知</label>
+                                </div>
+                                <div id="email-notification-input" class="hidden ml-6 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
+                                    <label for="recipient_email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email 信箱:</label>
+                                    <input type="email" id="recipient_email" name="recipient_email" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm" placeholder="your@email.com">
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">壓縮完成後會寄送通知信到此信箱，包含下載連結</p>
+                                </div>
+                            </div>
                         </fieldset>
                         <div class="mt-6 text-center"><button type="button" id="start-compress-btn" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
@@ -1450,6 +1461,22 @@
                         } else {
                             customLengthInputs.classList.add('hidden');
                             writeDebugLog('自訂密碼長度功能已關閉');
+                        }
+                    });
+                }
+
+                // Email 通知勾選框控制顯示/隱藏
+                const enableEmailCheckbox = document.getElementById('enable_email');
+                const emailNotificationInput = document.getElementById('email-notification-input');
+
+                if (enableEmailCheckbox && emailNotificationInput) {
+                    enableEmailCheckbox.addEventListener('change', function() {
+                        if (this.checked) {
+                            emailNotificationInput.classList.remove('hidden');
+                            writeDebugLog('Email 通知功能已啟用');
+                        } else {
+                            emailNotificationInput.classList.add('hidden');
+                            writeDebugLog('Email 通知功能已關閉');
                         }
                     });
                 }
