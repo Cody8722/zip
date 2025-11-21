@@ -1014,7 +1014,7 @@
                                 pollingTimeoutId = null;
                             }
                         } else if (currentTaskId === taskId) {
-                            pollingTimeoutId = setTimeout(() => checkStatus(taskId), 2000);
+                            pollingTimeoutId = setTimeout(() => checkStatus(taskId), 500);  // 500ms 輪詢間隔
                         }
                     } catch (error) {
                         writeDebugLog(`檢查狀態時發生錯誤: ${error.message}\n${error.stack}`, null, true);
