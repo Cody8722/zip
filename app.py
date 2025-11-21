@@ -97,11 +97,87 @@ except Exception as e:
     redis_client = None
 
 # --- 清理函數 ---
+def cleanup_stale_files():
+    """清理臨時目錄中的殘留檔案"""
+    try:
+        for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
+            if not os.path.exists(folder):
+                continue
+
+            file_count = 0
+            for filename in os.listdir(folder):
+                filepath = os.path.join(folder, filename)
+                try:
+                    if os.path.isfile(filepath):
+                        os.remove(filepath)
+                        file_count += 1
+                    elif os.path.isdir(filepath):
+                        shutil.rmtree(filepath)
+                        file_count += 1
+                except Exception as e:
+                    logging.warning(f"清理檔案 {filepath} 失敗: {e}")
+
+            if file_count > 0:
+                logging.info(f"✅ 已清理 {folder} 中的 {file_count} 個殘留檔案")
+    except Exception as e:
+        logging.error(f"清理臨時檔案時發生錯誤: {e}")
+
+def cleanup_stale_tasks():
+    """清理資料庫中卡住的任務（超過 2 小時仍在處理中）"""
+    try:
+        if not tasks_collection:
+            return
+
+        from datetime import timedelta
+        cutoff_time = datetime.utcnow() - timedelta(hours=2)
+
+        result = tasks_collection.update_many(
+            {
+                'status': {'$in': ['處理中', 'pending']},
+                'created_at': {'$lt': cutoff_time}
+            },
+            {
+                '$set': {
+                    'status': '失敗',
+                    'progress_text': '任務超時（系統重啟或崩潰）'
+                }
+            }
+        )
+
+        if result.modified_count > 0:
+            logging.info(f"✅ 已將 {result.modified_count} 個卡住的任務標記為失敗")
+    except Exception as e:
+        logging.error(f"清理卡住的任務時發生錯誤: {e}")
+
+def cleanup_on_startup():
+    """應用程式啟動時執行清理"""
+    logging.info("🔧 執行啟動清理...")
+    cleanup_stale_tasks()
+    cleanup_stale_files()
+
+    # 重置活動任務計數器
+    global active_task_count
+    active_task_count = 0
+    logging.info("✅ 啟動清理完成")
+
 def cleanup_on_exit():
     """應用程式退出時清理資源"""
-    logging.info("正在清理資源...")
+    logging.info("🔧 正在清理資源...")
+
     try:
-        # 等待所有任務完成
+        # 標記所有處理中的任務為中斷
+        if tasks_collection:
+            result = tasks_collection.update_many(
+                {'status': {'$in': ['處理中', 'pending']}},
+                {'$set': {'status': '已取消', 'progress_text': '伺服器關閉'}}
+            )
+            if result.modified_count > 0:
+                logging.info(f"✅ 已標記 {result.modified_count} 個任務為已取消")
+    except Exception as e:
+        logging.error(f"標記任務為已取消時發生錯誤: {e}")
+
+    try:
+        # 等待線程池關閉（最多等待 30 秒）
         executor.shutdown(wait=True)
         logging.info("✅ 線程池已清理")
     except Exception as e:
@@ -115,17 +191,46 @@ def cleanup_on_exit():
     except Exception as e:
         logging.error(f"關閉 MongoDB 連接時發生錯誤: {e}")
 
+    try:
+        # 關閉 Redis 連接
+        if redis_client:
+            redis_client.close()
+            logging.info("✅ Redis 連接已關閉")
+    except Exception as e:
+        logging.error(f"關閉 Redis 連接時發生錯誤: {e}")
+
 # 註冊清理函數
 atexit.register(cleanup_on_exit)
 
-# 處理信號（Ctrl+C 或 kill）
+# 處理信號（Ctrl+C 或 Docker 重啟）
 def signal_handler(signum, frame):
-    logging.info(f"收到信號 {signum}，正在優雅地關閉...")
+    signal_name = 'SIGTERM' if signum == signal.SIGTERM else 'SIGINT'
+    logging.info(f"⚠️ 收到 {signal_name} 信號，正在優雅地關閉...")
     cleanup_on_exit()
     exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+
+# 定期清理背景任務
+def periodic_cleanup():
+    """每小時執行一次清理，防止檔案堆積"""
+    import time
+    while True:
+        try:
+            time.sleep(3600)  # 每 1 小時
+            logging.info("🔧 執行定期清理...")
+            cleanup_stale_tasks()
+            cleanup_stale_files()
+        except Exception as e:
+            logging.error(f"定期清理時發生錯誤: {e}")
+
+# 啟動定期清理線程（守護線程，不會阻止程式退出）
+cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
+cleanup_thread.start()
+
+# 執行啟動清理
+cleanup_on_startup()
 
 # --- 通用輔助函式 ---
 def calculate_encrypt_layers(encrypt_mode, iterations, manual_layers=None, multiple_interval=3, arithmetic_start=1, arithmetic_diff=2):
