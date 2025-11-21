@@ -410,6 +410,10 @@
                             <button id="clear-history-btn" class="text-sm text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">清除所有紀錄</button>
                          </div>
                      </div>
+                     <!-- 搜尋欄位 -->
+                     <div class="mb-4">
+                         <input type="text" id="history-search" placeholder="🔍 搜尋歷史記錄（檔名、日期）..." class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+                     </div>
                      <div id="history-list" class="space-y-3">
                          <!-- JS will populate this -->
                      </div>
@@ -800,6 +804,7 @@
                     fileInputDecompress: document.getElementById('file-decompress'), 
                     fileNameDisplayDecompress: document.getElementById('file-name-display-decompress'), 
                     historyList: document.getElementById('history-list'),
+                    historySearch: document.getElementById('history-search'),
                     clearHistoryBtn: document.getElementById('clear-history-btn'),
                     cleanupOrphansBtn: document.getElementById('cleanup-orphans-btn'), 
                     deleteConfirmModal: document.getElementById('delete-confirm-modal'),
@@ -990,12 +995,47 @@
                         writeDebugLog(`Polling response status: ${response.status}`, {taskId});
                         if (!response.ok) {
                             throw new Error(`伺服器回應錯誤: ${response.status}`);
-                        }; 
+                        };
                         const data = await response.json();
                         writeDebugLog("Polling data received:", data);
-                        
+
                         const progress = data.progress || 0;
-                        elements.progressStatus.textContent = data.progress_text || "處理中...";
+                        let progressText = data.progress_text || "處理中...";
+
+                        // 時間估算邏輯
+                        if (data.type === 'compress' && progress > 0 && progress < 100) {
+                            // 初始化開始時間
+                            if (!compressionStartTime) {
+                                compressionStartTime = Date.now();
+                            }
+
+                            // 從日誌中計算已完成的層數
+                            const logs = data.logs || [];
+                            const layerMatches = logs.filter(log => log.includes('✅ 第') && log.includes('層壓縮完成'));
+                            const currentCompletedLayers = layerMatches.length;
+
+                            if (currentCompletedLayers > 0 && data.params && data.params.iterations) {
+                                const totalLayers = data.params.iterations;
+                                const elapsedSeconds = (Date.now() - compressionStartTime) / 1000;
+                                const avgTimePerLayer = elapsedSeconds / currentCompletedLayers;
+                                const remainingLayers = totalLayers - currentCompletedLayers;
+                                const estimatedRemainingSeconds = avgTimePerLayer * remainingLayers;
+
+                                // 格式化剩餘時間
+                                let timeText = '';
+                                if (estimatedRemainingSeconds > 60) {
+                                    const minutes = Math.floor(estimatedRemainingSeconds / 60);
+                                    const seconds = Math.floor(estimatedRemainingSeconds % 60);
+                                    timeText = `約 ${minutes} 分 ${seconds} 秒`;
+                                } else {
+                                    timeText = `約 ${Math.floor(estimatedRemainingSeconds)} 秒`;
+                                }
+
+                                progressText += ` | ⏱️ 預計剩餘: ${timeText}`;
+                            }
+                        }
+
+                        elements.progressStatus.textContent = progressText;
                         elements.progressBar.style.width = `${progress}%`;
                         elements.progressPercentage.textContent = `${progress}%`;
                         elements.progressContainer.setAttribute("aria-valuenow", progress);
@@ -1009,6 +1049,9 @@
                             if (data.status === "完成") displayResults(data);
                             elements.cancelButton.classList.add("hidden");
                             currentTaskId = null;
+                            // 重置時間估算變數
+                            compressionStartTime = null;
+                            completedLayers = 0;
                             if (pollingTimeoutId) {
                                 clearTimeout(pollingTimeoutId);
                                 pollingTimeoutId = null;
@@ -1104,8 +1147,101 @@
                         }
                     }
                 }
-                function saveToHistory(task) { let history = JSON.parse(localStorage.getItem('compressHistory') || '[]'); const newRecord = { id: task._id, name: task.params.raw_filename, date: new Date().toLocaleString(), finalName: task.result_filename, token: task.delete_token }; history.unshift(newRecord); if (history.length > 50) history.pop(); localStorage.setItem('compressHistory', JSON.stringify(history)); }
-                function renderHistory() { elements.historyList.innerHTML = ""; let history = JSON.parse(localStorage.getItem('compressHistory') || '[]'); if (history.length === 0) { elements.historyList.innerHTML = '<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>'; return; } history.forEach(item => { const div = document.createElement("div"); div.className = "p-3 bg-gray-50 dark:bg-gray-700 rounded-lg flex items-center justify-between"; div.innerHTML = `<div><p class="font-medium text-gray-900 dark:text-white">${item.name}</p><p class="text-sm text-gray-500 dark:text-gray-400">${item.date}</p></div><div class="flex gap-2"><button data-id="${item.id}" class="history-share-btn text-sm text-blue-500 hover:underline">分享</button><button data-id="${item.id}" class="history-qr-btn text-sm text-green-500 hover:underline">QR</button><button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn text-sm text-red-500 hover:underline">刪除</button></div>`; elements.historyList.appendChild(div); }); }
+                function saveToHistory(task) {
+                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                    const newRecord = {
+                        id: task._id,
+                        name: task.params.raw_filename,
+                        date: new Date().toLocaleString(),
+                        finalName: task.result_filename,
+                        token: task.delete_token,
+                        // 新增欄位
+                        compressionRatio: task.compression_ratio || 0,
+                        originalSize: task.original_size || 0,
+                        finalSize: task.final_size || 0,
+                        iterations: task.params.iterations || 1,
+                        formats: task.params.formats || []
+                    };
+                    history.unshift(newRecord);
+                    if (history.length > 50) history.pop();
+                    localStorage.setItem('compressHistory', JSON.stringify(history));
+                }
+                function renderHistory(searchTerm = '') {
+                    elements.historyList.innerHTML = "";
+                    let history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+
+                    // 篩選歷史記錄
+                    if (searchTerm) {
+                        const lowerSearch = searchTerm.toLowerCase();
+                        history = history.filter(item =>
+                            item.name.toLowerCase().includes(lowerSearch) ||
+                            item.finalName.toLowerCase().includes(lowerSearch) ||
+                            item.date.toLowerCase().includes(lowerSearch)
+                        );
+                    }
+
+                    if (history.length === 0) {
+                        elements.historyList.innerHTML = searchTerm
+                            ? '<p class="text-center text-gray-500 dark:text-gray-400">找不到符合的壓縮紀錄。</p>'
+                            : '<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>';
+                        return;
+                    }
+
+                    history.forEach(item => {
+                        const div = document.createElement("div");
+                        div.className = "p-4 bg-gray-50 dark:bg-gray-700 rounded-lg";
+
+                        // 格式化檔案大小
+                        const formatSize = (bytes) => {
+                            if (!bytes || bytes === 0) return '未知';
+                            if (bytes < 1024) return bytes + ' B';
+                            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+                            return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+                        };
+
+                        const originalSize = formatSize(item.originalSize);
+                        const finalSize = formatSize(item.finalSize);
+                        const ratio = item.compressionRatio ? item.compressionRatio.toFixed(2) + '%' : '未知';
+                        const iterations = item.iterations || '未知';
+                        const icon = getFileIcon(item.name);
+
+                        div.innerHTML = `
+                            <div class="flex items-start justify-between mb-2">
+                                <div class="flex-1">
+                                    <p class="font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                                        <span>${icon}</span>
+                                        <span>${item.name}</span>
+                                    </p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">🕒 ${item.date}</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mt-3 mb-3">
+                                <div class="bg-white dark:bg-gray-800 p-2 rounded">
+                                    <span class="text-gray-500 dark:text-gray-400">原始大小</span>
+                                    <p class="font-semibold text-gray-900 dark:text-white">${originalSize}</p>
+                                </div>
+                                <div class="bg-white dark:bg-gray-800 p-2 rounded">
+                                    <span class="text-gray-500 dark:text-gray-400">壓縮後</span>
+                                    <p class="font-semibold text-gray-900 dark:text-white">${finalSize}</p>
+                                </div>
+                                <div class="bg-white dark:bg-gray-800 p-2 rounded">
+                                    <span class="text-gray-500 dark:text-gray-400">壓縮率</span>
+                                    <p class="font-semibold text-green-600 dark:text-green-400">${ratio}</p>
+                                </div>
+                                <div class="bg-white dark:bg-gray-800 p-2 rounded">
+                                    <span class="text-gray-500 dark:text-gray-400">壓縮層數</span>
+                                    <p class="font-semibold text-blue-600 dark:text-blue-400">${iterations} 層</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 justify-end">
+                                <button data-id="${item.id}" class="history-share-btn px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">📤 分享</button>
+                                <button data-id="${item.id}" class="history-qr-btn px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600">📱 QR</button>
+                                <button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600">🗑️ 刪除</button>
+                            </div>
+                        `;
+                        elements.historyList.appendChild(div);
+                    });
+                }
                 function promptDeleteFile(taskId, token, isCurrentTask = false) {
                     elements.deleteModalTitle.textContent = '永久刪除檔案';
                     elements.deleteModalText.innerHTML = '您確定要刪除這個檔案嗎？<br>此操作無法復原，分享連結將會失效。';
@@ -1328,6 +1464,11 @@
                         const token = target.dataset.token;
                         promptDeleteFile(taskId, token);
                     }
+                });
+
+                // 歷史記錄搜尋功能
+                elements.historySearch.addEventListener('input', function() {
+                    renderHistory(this.value);
                 });
 
                 elements.clearHistoryBtn.addEventListener('click', async () => {
@@ -1554,6 +1695,183 @@
                 }
                 updateStorageStats();
                 updateThemeIcons(document.documentElement.classList.contains('dark'));
+
+                // ============================================
+                // 功能 1: 壓縮參數記憶功能
+                // ============================================
+                function saveCompressPreferences() {
+                    try {
+                        const prefs = {
+                            iterations: elements.iterationsInput.value,
+                            formats: Array.from(document.querySelectorAll('input[name="formats"]:checked')).map(cb => cb.value).join(','),
+                            encrypt_mode: document.getElementById('encrypt_mode')?.value,
+                            multiple_interval: document.getElementById('multiple_interval')?.value,
+                            arithmetic_start: document.getElementById('arithmetic_start')?.value,
+                            arithmetic_diff: document.getElementById('arithmetic_diff')?.value,
+                            use_custom_length: document.getElementById('use_custom_length')?.checked,
+                            default_password_length: document.getElementById('default_password_length')?.value,
+                            use_master_pass: document.getElementById('use_master_pass')?.checked,
+                            master_password_interval: document.getElementById('master_password_interval')?.value
+                        };
+                        localStorage.setItem('compressPreferences', JSON.stringify(prefs));
+                        writeDebugLog('✅ 已儲存壓縮參數偏好');
+                    } catch (e) {
+                        writeDebugLog(`⚠️ 儲存參數偏好失敗: ${e.message}`);
+                    }
+                }
+
+                function loadCompressPreferences() {
+                    try {
+                        const saved = localStorage.getItem('compressPreferences');
+                        if (!saved) return;
+
+                        const prefs = JSON.parse(saved);
+
+                        if (prefs.iterations) elements.iterationsInput.value = prefs.iterations;
+                        if (prefs.formats) {
+                            const formats = prefs.formats.split(',');
+                            document.querySelectorAll('input[name="formats"]').forEach(cb => {
+                                cb.checked = formats.includes(cb.value);
+                            });
+                        }
+                        if (prefs.encrypt_mode) {
+                            const encryptSelect = document.getElementById('encrypt_mode');
+                            if (encryptSelect) {
+                                encryptSelect.value = prefs.encrypt_mode;
+                                encryptSelect.dispatchEvent(new Event('change'));
+                            }
+                        }
+                        if (prefs.multiple_interval) document.getElementById('multiple_interval').value = prefs.multiple_interval;
+                        if (prefs.arithmetic_start) document.getElementById('arithmetic_start').value = prefs.arithmetic_start;
+                        if (prefs.arithmetic_diff) document.getElementById('arithmetic_diff').value = prefs.arithmetic_diff;
+                        if (prefs.use_custom_length !== undefined) {
+                            const customLengthCb = document.getElementById('use_custom_length');
+                            customLengthCb.checked = prefs.use_custom_length;
+                            customLengthCb.dispatchEvent(new Event('change'));
+                        }
+                        if (prefs.default_password_length) document.getElementById('default_password_length').value = prefs.default_password_length;
+                        if (prefs.use_master_pass !== undefined) {
+                            const masterPassCb = document.getElementById('use_master_pass');
+                            masterPassCb.checked = prefs.use_master_pass;
+                            masterPassCb.dispatchEvent(new Event('change'));
+                        }
+                        if (prefs.master_password_interval) document.getElementById('master_password_interval').value = prefs.master_password_interval;
+
+                        Toast.info('📋 已載入上次的壓縮設定');
+                        writeDebugLog('✅ 已載入壓縮參數偏好');
+                    } catch (e) {
+                        writeDebugLog(`⚠️ 載入參數偏好失敗: ${e.message}`);
+                    }
+                }
+
+                // 載入保存的偏好設定
+                loadCompressPreferences();
+
+                // 在壓縮按鈕點擊時保存參數（修改現有的監聽器）
+                const originalStartCompress = elements.startCompressBtn.onclick;
+                elements.startCompressBtn.addEventListener('click', () => {
+                    saveCompressPreferences();
+                }, true); // 使用 capture 模式確保在原始處理前執行
+
+                // ============================================
+                // 功能 3: 檔案類型圖示
+                // ============================================
+                function getFileIcon(filename) {
+                    const ext = filename.split('.').pop().toLowerCase();
+                    const icons = {
+                        // 文件
+                        'pdf': '📄', 'doc': '📝', 'docx': '📝', 'txt': '📝',
+                        // 表格
+                        'xls': '📊', 'xlsx': '📊', 'csv': '📊',
+                        // 圖片
+                        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️',
+                        // 壓縮檔
+                        'zip': '📦', '7z': '📦', 'rar': '📦', 'gz': '📦', 'tar': '📦',
+                        // 程式碼
+                        'js': '💻', 'py': '💻', 'java': '💻', 'cpp': '💻', 'html': '💻',
+                        // 影片
+                        'mp4': '🎬', 'avi': '🎬', 'mkv': '🎬',
+                        // 音樂
+                        'mp3': '🎵', 'wav': '🎵', 'flac': '🎵'
+                    };
+                    return icons[ext] || '📁';
+                }
+
+                // 更新檔案選擇顯示（壓縮）
+                elements.fileInputCompress.addEventListener('change', function() {
+                    const fileNameDisplay = document.getElementById('file-name-compress');
+                    const fileInfo = document.getElementById('file-info-compress');
+                    if (this.files && this.files[0]) {
+                        const file = this.files[0];
+                        const icon = getFileIcon(file.name);
+                        fileNameDisplay.textContent = `${icon} ${file.name}`;
+                        fileInfo.textContent = `大小: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+                    }
+                });
+
+                // 更新檔案選擇顯示（解壓縮）
+                elements.fileInputDecompress.addEventListener('change', function() {
+                    const fileNameDisplay = document.getElementById('file-name-decompress');
+                    const fileInfo = document.getElementById('file-info-decompress');
+                    if (this.files && this.files[0]) {
+                        const file = this.files[0];
+                        const icon = getFileIcon(file.name);
+                        fileNameDisplay.textContent = `${icon} ${file.name}`;
+                        fileInfo.textContent = `大小: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+                    }
+                });
+
+                // ============================================
+                // 功能 2: 壓縮時間估算
+                // ============================================
+                let compressionStartTime = null;
+                let completedLayers = 0;
+
+                // 在 checkStatus 中添加時間估算邏輯（需要修改現有的 checkStatus 函數）
+                const originalCheckStatus = window.checkStatus;
+
+                // ============================================
+                // 功能 4: 密碼強度指示器
+                // ============================================
+                function checkPasswordStrength(password) {
+                    if (!password) return { level: 'none', text: '', color: '' };
+
+                    const length = password.length;
+                    const hasLower = /[a-z]/.test(password);
+                    const hasUpper = /[A-Z]/.test(password);
+                    const hasNumber = /[0-9]/.test(password);
+                    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+                    let score = 0;
+                    if (length >= 8) score++;
+                    if (length >= 12) score++;
+                    if (hasLower && hasUpper) score++;
+                    if (hasNumber) score++;
+                    if (hasSpecial) score++;
+
+                    if (score <= 1) return { level: 'weak', text: '🔴 弱', color: 'text-red-600 dark:text-red-400' };
+                    if (score <= 3) return { level: 'medium', text: '🟡 中', color: 'text-yellow-600 dark:text-yellow-400' };
+                    return { level: 'strong', text: '🟢 強', color: 'text-green-600 dark:text-green-400' };
+                }
+
+                const masterPasswordInput = document.getElementById('master_password');
+                if (masterPasswordInput) {
+                    // 創建強度指示器元素
+                    const strengthIndicator = document.createElement('div');
+                    strengthIndicator.id = 'password-strength';
+                    strengthIndicator.className = 'mt-1 text-sm';
+                    masterPasswordInput.parentNode.appendChild(strengthIndicator);
+
+                    masterPasswordInput.addEventListener('input', function() {
+                        const strength = checkPasswordStrength(this.value);
+                        if (strength.level === 'none') {
+                            strengthIndicator.textContent = '';
+                        } else {
+                            strengthIndicator.className = `mt-1 text-sm font-medium ${strength.color}`;
+                            strengthIndicator.textContent = `密碼強度：${strength.text}`;
+                        }
+                    });
+                }
 
                 writeDebugLog("應用程式初始化完成。");
                 
