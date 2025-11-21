@@ -1001,24 +1001,63 @@
                     const isCompress = task.type === 'compress';
                     if (isCompress) saveToHistory(task);
 
+                    // 顯示壓縮統計資訊
+                    if (isCompress && task.compression_ratio !== undefined) {
+                        const originalSizeMB = (task.original_size / 1024 / 1024).toFixed(2);
+                        const finalSizeMB = (task.final_size / 1024 / 1024).toFixed(2);
+                        const ratio = task.compression_ratio.toFixed(2);
+
+                        elements.resultTitle.innerHTML = `
+                            ✅ 壓縮完成！
+                            <div class="mt-2 text-sm font-normal text-blue-600 dark:text-blue-400">
+                                📊 原始大小: ${originalSizeMB} MB → 壓縮後: ${finalSizeMB} MB (壓縮率: ${ratio}%)
+                            </div>
+                        `;
+                    }
+
                     if (task.result_file_id) {
                         if (!isCompress) {
                             elements.logBox.innerHTML += "\n\n日誌: 正在自動為您下載檔案...";
                             window.location.href = `/download/${task._id}`;
                         }
-                        
+
                         const downloadBtn = document.createElement("a");
                         downloadBtn.href = `/download/${task._id}`;
-                        downloadBtn.textContent = `下載檔案 (${task.result_filename})`;
-                        downloadBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? "bg-blue-600" : "bg-green-600"}`;
+                        downloadBtn.textContent = `📥 下載檔案 (${task.result_filename})`;
+                        downloadBtn.className = `w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white ${isCompress ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`;
                         elements.resultButtons.appendChild(downloadBtn);
                     }
 
                     if (isCompress) {
                         updateStorageStats();
                         if (task.password_file_content) {
+                            // 下載密碼檔按鈕
+                            const downloadPwdBtn = document.createElement("a");
+                            downloadPwdBtn.href = `/download-password/${task._id}`;
+                            downloadPwdBtn.innerHTML = '🔑 下載密碼檔';
+                            downloadPwdBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700";
+                            elements.resultButtons.appendChild(downloadPwdBtn);
+
+                            // 複製密碼表按鈕
+                            const copyPwdBtn = document.createElement("button");
+                            copyPwdBtn.innerHTML = '📋 複製密碼表';
+                            copyPwdBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-purple-800 bg-purple-100 hover:bg-purple-200 dark:text-purple-200 dark:bg-purple-900 dark:hover:bg-purple-800";
+                            copyPwdBtn.onclick = () => {
+                                navigator.clipboard.writeText(task.password_file_content).then(() => {
+                                    copyPwdBtn.innerHTML = '✅ 已複製!';
+                                    Toast.success('密碼表已複製到剪貼簿');
+                                    setTimeout(() => {
+                                        copyPwdBtn.innerHTML = '📋 複製密碼表';
+                                    }, 2000);
+                                }).catch(err => {
+                                    Toast.error('複製失敗，請手動複製');
+                                    console.error('複製失敗:', err);
+                                });
+                            };
+                            elements.resultButtons.appendChild(copyPwdBtn);
+
                             const shareBtn = document.createElement("button");
-                            shareBtn.innerHTML = "產生分享連結";
+                            shareBtn.innerHTML = "🔗 產生分享連結";
                             shareBtn.className = "w-full md:w-auto inline-flex items-center justify-center px-5 py-2 border border-transparent text-sm font-medium rounded-md text-yellow-800 bg-yellow-100 hover:bg-yellow-200 dark:text-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800";
                             shareBtn.onclick = (e) => displayShareLink(e, task);
                             elements.resultButtons.appendChild(shareBtn);
