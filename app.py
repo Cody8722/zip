@@ -125,7 +125,7 @@ def cleanup_stale_files():
 def cleanup_stale_tasks():
     """清理資料庫中卡住的任務（超過 2 小時仍在處理中）"""
     try:
-        if not tasks_collection:
+        if tasks_collection is None:
             return
 
         from datetime import timedelta
@@ -166,7 +166,7 @@ def cleanup_on_exit():
 
     try:
         # 標記所有處理中的任務為中斷
-        if tasks_collection:
+        if tasks_collection is not None:
             result = tasks_collection.update_many(
                 {'status': {'$in': ['處理中', 'pending']}},
                 {'$set': {'status': '已取消', 'progress_text': '伺服器關閉'}}
@@ -185,7 +185,7 @@ def cleanup_on_exit():
 
     try:
         # 關閉 MongoDB 連接
-        if client:
+        if client is not None:
             client.close()
             logging.info("✅ MongoDB 連接已關閉")
     except Exception as e:
@@ -193,7 +193,7 @@ def cleanup_on_exit():
 
     try:
         # 關閉 Redis 連接
-        if redis_client:
+        if redis_client is not None:
             redis_client.close()
             logging.info("✅ Redis 連接已關閉")
     except Exception as e:
