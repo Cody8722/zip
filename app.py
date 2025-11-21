@@ -807,16 +807,24 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             current_file = output_filename
             update_task_progress(task_id, int((i / iterations) * 100))
         update_task_log(task_id, "✅ 壓縮流程結束。", is_progress_text=True)
+
         # 計算壓縮率
         final_size = os.path.getsize(current_file)
         compression_ratio = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+        update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
 
+        # 上傳到雲端儲存
+        update_task_log(task_id, "☁️ 正在上傳至雲端儲存...", is_progress_text=True)
         with open(current_file, 'rb') as f_in:
             file_id = fs.put(f_in, filename=os.path.basename(current_file))
         os.remove(current_file)
+        update_task_log(task_id, "✅ 檔案已上傳至雲端儲存")
+
+        # 生成安全令牌
         delete_token = secrets.token_hex(DELETE_TOKEN_BYTES)
 
-        # 新版本：存儲元數據而非明文密碼（提升安全性）
+        # 儲存任務結果
+        update_task_log(task_id, "💾 正在儲存任務資訊...", is_progress_text=True)
         tasks_collection.update_one({'_id': task_id}, {'$set': {
             'status': '完成', 'progress': 100,
             'result_file_id': str(file_id), 'result_filename': os.path.basename(current_file),
@@ -824,7 +832,7 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             'delete_token': delete_token,
             'original_size': original_size, 'final_size': final_size, 'compression_ratio': round(compression_ratio, 2)
         }})
-        update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
+
         if recipient_email and host_url:
             try:
                 send_completion_email(recipient_email, task_id_str, params['raw_filename'], host_url)
