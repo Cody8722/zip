@@ -438,13 +438,15 @@ def update_task_log(task_id, message, is_progress_text=False):
             update_doc['$set'] = {'progress_text': message}
         result = tasks_collection.update_one({'_id': task_id}, update_doc)
 
-        # 更新快取中的 progress_text
-        if is_progress_text and redis_client:
+        # 讓快取失效，確保下次查詢時能讀到最新的 logs
+        # logs 是陣列，難以在 Redis 中即時更新，所以選擇刪除快取
+        if redis_client:
             try:
                 cache_key = f"task:{task_id}"
-                redis_client.hset(cache_key, 'progress_text', message)
+                redis_client.delete(cache_key)
+                # logging.debug(f"已清除任務 {task_id} 的快取，確保日誌即時更新")
             except Exception as e:
-                logging.warning(f"⚠️ 更新快取 progress_text 失敗: {e}")
+                logging.warning(f"⚠️ 清除快取失敗: {e}")
 
         return result
     safe_db_operation(_update, f"更新任務日誌 ({task_id})")
