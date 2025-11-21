@@ -436,7 +436,17 @@ def update_task_log(task_id, message, is_progress_text=False):
         update_doc = {'$push': {'logs': message}}
         if is_progress_text:
             update_doc['$set'] = {'progress_text': message}
-        return tasks_collection.update_one({'_id': task_id}, update_doc)
+        result = tasks_collection.update_one({'_id': task_id}, update_doc)
+
+        # 更新快取中的 progress_text
+        if is_progress_text and redis_client:
+            try:
+                cache_key = f"task:{task_id}"
+                redis_client.hset(cache_key, 'progress_text', message)
+            except Exception as e:
+                logging.warning(f"⚠️ 更新快取 progress_text 失敗: {e}")
+
+        return result
     safe_db_operation(_update, f"更新任務日誌 ({task_id})")
 
 def update_task_progress(task_id, progress):
