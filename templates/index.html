@@ -36,88 +36,296 @@
     </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .log-box { font-family: 'Courier New', Courier, monospace; }
-        .tab-button { transition: all 0.3s; padding: 0.75rem 0.25rem; border-bottom-width: 2px; font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; white-space: nowrap; border-color: transparent;}
-        .tab-button.active { border-color: #3b82f6; color: #3b82f6; }
-        .dark .tab-button.active { background-color: #1e3a8a; color: #e0f2fe;}
-        .fade-in { animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* ========================================
+           🎨 全套 UI 改造 - 現代化設計系統
+           ======================================== */
+
+        /* === 基礎樣式 === */
+        body {
+            font-family: 'Inter', sans-serif;
+            position: relative;
+            min-height: 100vh;
+        }
+
+        /* === 漸層背景 === */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            opacity: 0.1;
+        }
+
+        .dark body::before {
+            background: linear-gradient(135deg, #1e3a8a 0%, #312e81 100%);
+            opacity: 0.2;
+        }
+
+        /* === 玻璃擬態效果 === */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .dark .glass-card {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        /* === Tab 按鈕強化 === */
+        .tab-button {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 0.75rem 1.5rem;
+            border-bottom-width: 3px;
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+            font-weight: 600;
+            white-space: nowrap;
+            border-color: transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tab-button::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+        }
+
+        .tab-button.active::before {
+            width: 100%;
+        }
+
+        .tab-button.active {
+            color: #3b82f6;
+            border-color: transparent;
+        }
+
+        .dark .tab-button.active {
+            color: #60a5fa;
+        }
+
+        .tab-button:hover:not(.active) {
+            background-color: rgba(59, 130, 246, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* === 動畫系統 === */
+        .fade-in {
+            animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in-left {
+            animation: slideInLeft 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .scale-in {
+            animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* === 進度條強化 === */
+        #progress-bar, #upload-progress-bar {
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);
+            background-size: 200% 100%;
+            animation: gradientFlow 3s ease infinite;
+        }
+
+        @keyframes gradientFlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* 流動光澤效果 */
+        #progress-bar::after, #upload-progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.4),
+                transparent
+            );
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        /* 脈衝效果（處理中時） */
+        .progress-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* === 拖放區域優化 === */
         .drop-zone {
-            border: 2px dashed #9ca3af;
-            transition: all 0.3s;
+            border: 3px dashed #cbd5e1;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            background: linear-gradient(145deg, #f8fafc, #f1f5f9);
         }
-        .dark .drop-zone { border-color: #4b5563; }
-        .drop-zone.drag-over {
-            border-color: #3b82f6;
-            background-color: #eff6ff;
+
+        .dark .drop-zone {
+            border-color: #475569;
+            background: linear-gradient(145deg, #1e293b, #0f172a);
         }
-        .dark .drop-zone.drag-over { background-color: #1e3a8a; }
-        
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: rgba(0, 0, 0, 0.6);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 50;
-            opacity: 0; transition: opacity 0.3s ease;
+
+        .drop-zone::before {
+            content: '📁';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 4rem;
+            opacity: 0.1;
             pointer-events: none;
         }
-        .modal-overlay.visible { opacity: 1; pointer-events: auto; }
+
+        .drop-zone.drag-over {
+            border-color: #3b82f6;
+            background: linear-gradient(145deg, #dbeafe, #bfdbfe);
+            transform: scale(1.02);
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.3);
+        }
+
+        .dark .drop-zone.drag-over {
+            background: linear-gradient(145deg, #1e3a8a, #1e40af);
+        }
+
+        /* === 按鈕波紋效果 === */
+        .btn-ripple {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-ripple:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-ripple:active {
+            transform: translateY(0);
+        }
+
+        .btn-ripple::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.5);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn-ripple:active::after {
+            width: 300px;
+            height: 300px;
+        }
+
+        /* === 卡片浮起效果 === */
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15);
+        }
+
+        .dark .card-hover:hover {
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        /* === Modal 優化 === */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
         .modal-content {
-            background-color: white; padding: 2rem; border-radius: 0.5rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            transform: scale(0.95); transition: transform 0.3s ease;
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+            transform: scale(0.9);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
             max-width: 90%;
             width: 500px;
         }
-        .dark .modal-content { background-color: #1f2937; }
-        .modal-overlay.visible .modal-content { transform: scale(1); }
-        
-        /* --- Styles for the "Black Box" Debug Console --- */
-        #debug-console {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            width: 450px;
-            height: 300px;
-            background-color: rgba(0, 0, 0, 0.85);
-            color: #00ff00; /* Lime green */
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            border: 1px solid #444;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            z-index: 1000;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
-            resize: both;
-            overflow: auto;
-        }
-        #debug-header {
-            background-color: #222;
-            color: #eee;
-            padding: 5px 10px;
-            cursor: move;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #444;
-            flex-shrink: 0;
-        }
-        #debug-header span { font-weight: bold; }
-        #debug-output {
-            padding: 10px;
-            overflow-y: scroll;
-            flex-grow: 1;
-            word-wrap: break-word;
-        }
-        .debug-log-error { color: #ff4d4d; }
 
-        .hidden {
-            display: none !important;
+        .dark .modal-content {
+            background: #1f2937;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        /* Toast 通知系統 */
+        .modal-overlay.visible .modal-content {
+            transform: scale(1);
+        }
+
+        /* === Toast 通知優化 === */
         #toast-container {
             position: fixed;
             top: 20px;
@@ -125,65 +333,217 @@
             z-index: 9999;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
             max-width: 400px;
         }
 
         .toast {
             padding: 16px 20px;
-            border-radius: 8px;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
             display: flex;
             align-items: center;
             gap: 12px;
-            animation: slideIn 0.3s ease-out;
-            min-width: 300px;
+            animation: slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            min-width: 320px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        @keyframes slideIn {
-            from { transform: translateX(400px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
+        @keyframes slideInRight {
+            from {
+                transform: translateX(400px) scale(0.8);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
         }
 
-        @keyframes slideOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(400px); opacity: 0; }
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0) scale(1);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px) scale(0.8);
+                opacity: 0;
+            }
         }
 
         .toast.removing {
-            animation: slideOut 0.3s ease-in forwards;
+            animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
         }
 
-        .toast-success { background-color: #10b981; color: white; }
-        .toast-error { background-color: #ef4444; color: white; }
-        .toast-warning { background-color: #f59e0b; color: white; }
-        .toast-info { background-color: #3b82f6; color: white; }
+        .toast-success {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
 
-        .toast-icon { flex-shrink: 0; width: 24px; height: 24px; }
-        .toast-message { flex-grow: 1; font-size: 14px; }
-        .toast-close { cursor: pointer; opacity: 0.8; transition: opacity 0.2s; flex-shrink: 0; }
-        .toast-close:hover { opacity: 1; }
+        .toast-error {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
 
-        /* 確認對話框改進 */
+        .toast-warning {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+        }
+
+        .toast-info {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+        }
+
+        .toast-icon {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            animation: iconPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes iconPop {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .toast-message {
+            flex-grow: 1;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .toast-close {
+            cursor: pointer;
+            opacity: 0.8;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .toast-close:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        /* === 輸入框強化 === */
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            transform: translateY(-1px);
+        }
+
+        /* === 狀態徽章 === */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .status-processing {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        .status-completed {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .status-failed {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+        }
+
+        /* === Debug Console === */
+        #debug-console {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            width: 450px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(10px);
+            color: #00ff00;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            border: 1px solid #333;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            resize: both;
+            overflow: auto;
+        }
+
+        #debug-header {
+            background: #111;
+            color: #eee;
+            padding: 8px 12px;
+            cursor: move;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+            border-radius: 12px 12px 0 0;
+        }
+
+        #debug-header span {
+            font-weight: bold;
+        }
+
+        #debug-output {
+            padding: 10px;
+            overflow-y: scroll;
+            flex-grow: 1;
+            word-wrap: break-word;
+        }
+
+        .debug-log-error {
+            color: #ff4d4d;
+        }
+
+        .log-box {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* === 確認對話框 === */
         .confirm-dialog .modal-content {
             padding: 1.5rem;
             max-width: 600px;
             width: 90%;
         }
 
-        @media (max-width: 640px) {
-            .confirm-dialog .modal-content {
-                max-width: 90%;
-                width: 90%;
+        /* === 響應式設計 === */
+        @media (max-width: 768px) {
+            .tab-button {
+                padding: 0.5rem 1rem;
+                font-size: 0.813rem;
+            }
+
+            .drop-zone::before {
+                font-size: 3rem;
             }
         }
 
-        /* 進度條動畫改進 */
-        #progress-bar, #upload-progress-bar {
-            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* 響應式改進 */
         @media (max-width: 640px) {
             #toast-container {
                 right: 10px;
@@ -194,6 +554,46 @@
             .toast {
                 min-width: auto;
             }
+
+            .confirm-dialog .modal-content {
+                max-width: 90%;
+                width: 90%;
+            }
+
+            #debug-console {
+                width: calc(100vw - 20px);
+                max-width: 450px;
+            }
+        }
+
+        /* === 無障礙增強 === */
+        *:focus-visible {
+            outline: 2px solid #3b82f6;
+            outline-offset: 2px;
+        }
+
+        /* === 滾動條美化 === */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, #764ba2, #667eea);
+        }
+
+        .dark ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
         }
     </style>
 </head>
@@ -225,7 +625,7 @@
             </button>
         </header>
 
-        <main class="bg-white rounded-lg shadow-lg p-6 md:p-8 dark:bg-gray-800">
+        <main class="glass-card rounded-2xl shadow-2xl p-6 md:p-8 card-hover">
             <div id="main-view">
                 <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
                     <nav class="-mb-px flex space-x-6" aria-label="Tabs">
@@ -371,7 +771,7 @@
                                 </div>
                             </div>
                         </fieldset>
-                        <div class="mt-6 text-center"><button type="button" id="start-compress-btn" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105 dark:focus:ring-blue-800">開始壓縮</button></div>
+                        <div class="mt-6 text-center"><button type="button" id="start-compress-btn" class="btn-ripple w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-blue-800">開始壓縮</button></div>
                     </form>
                 </div>
                 <div id="decompress-section" class="hidden">
@@ -399,7 +799,7 @@
                                <input type="password" id="decompress_master_password" name="master_password" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="若檔案需要特殊密碼，請在此輸入">
                             </div>
                         </fieldset>
-                        <div class="mt-6 text-center"><button type="button" id="start-decompress-btn" class="w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 dark:focus:ring-green-800">開始解壓縮</button></div>
+                        <div class="mt-6 text-center"><button type="button" id="start-decompress-btn" class="btn-ripple w-full md:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-green-800">開始解壓縮</button></div>
                     </form>
                 </div>
                 <div id="history-section" class="hidden">
@@ -423,7 +823,7 @@
             <div id="progress-section" class="hidden fade-in mt-8">
                  <div class="flex justify-between items-center mb-4 border-b pb-2 dark:border-gray-700">
                      <h2 class="text-2xl font-semibold">處理進度</h2>
-                     <button id="back-to-home-from-progress" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md transition">
+                     <button id="back-to-home-from-progress" class="btn-ripple inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md">
                          <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                              <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
                          </svg>
@@ -431,22 +831,22 @@
                      </button>
                  </div>
                  
-                 <div id="upload-progress-container" class="mb-4 hidden">
-                    <div class="flex justify-between mb-1"><span class="text-base font-medium text-gray-700 dark:text-gray-300">正在上傳檔案...</span><span id="upload-progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                        <div id="upload-progress-bar" class="bg-green-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                 <div id="upload-progress-container" class="mb-4 hidden scale-in">
+                    <div class="flex justify-between mb-2"><span class="text-base font-semibold text-gray-700 dark:text-gray-300 progress-pulse">正在上傳檔案...</span><span id="upload-progress-percentage" class="text-sm font-medium text-green-600 dark:text-green-400">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 shadow-inner overflow-hidden">
+                        <div id="upload-progress-bar" class="h-3 rounded-full" style="width: 0%"></div>
                     </div>
                  </div>
 
-                 <div class="mb-4">
-                    <div class="flex justify-between mb-1"><span id="progress-status" class="text-base font-medium text-gray-700 dark:text-gray-300">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
-                    <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700" role="progressbar" aria-label="處理進度" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                        <div id="progress-bar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                 <div class="mb-4 glass-card rounded-xl p-4">
+                    <div class="flex justify-between mb-2"><span id="progress-status" class="text-base font-semibold text-gray-700 dark:text-gray-300">處理中...</span><span id="progress-percentage" class="text-sm font-medium text-blue-600 dark:text-blue-400">0%</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-3 dark:bg-gray-700 shadow-inner overflow-hidden" role="progressbar" aria-label="處理進度" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <div id="progress-bar" class="h-3 rounded-full" style="width: 0%"></div>
                     </div>
                  </div>
-                 <div class="text-center my-4"><button id="cancel-button" class="hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-900 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-800">取消操作</button></div>
-                 <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700 dark:text-gray-300">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-md p-3 overflow-y-auto whitespace-pre-wrap dark:bg-black dark:text-gray-300"></div></div>
-                 <div id="result-section" class="hidden fade-in mt-6 p-4 bg-blue-50 rounded-lg text-center dark:bg-gray-900">
+                 <div class="text-center my-4"><button id="cancel-button" class="btn-ripple hidden w-full md:w-auto inline-flex justify-center items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:bg-red-900 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-800">取消操作</button></div>
+                 <div class="mt-4"><label for="log-box" class="block text-sm font-medium text-gray-700 dark:text-gray-300">執行日誌:</label><div id="log-box" class="log-box mt-1 h-48 bg-gray-900 text-white text-sm rounded-xl p-3 overflow-y-auto whitespace-pre-wrap dark:bg-black dark:text-gray-300 shadow-inner border border-gray-700"></div></div>
+                 <div id="result-section" class="hidden scale-in mt-6 p-6 glass-card rounded-2xl text-center">
                     <h3 id="result-title" class="text-lg font-medium text-blue-800 dark:text-blue-300">任務完成！</h3>
                     <div id="result-buttons" class="mt-4 flex flex-wrap justify-center items-center gap-4"></div>
                  </div>
@@ -455,20 +855,20 @@
             <div id="share-view-section" class="hidden">
                  <div class="flex justify-between items-center mb-2">
                      <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
-                     <button id="back-to-home-from-share" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md transition">
+                     <button id="back-to-home-from-share" class="btn-ripple inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md">
                          <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                              <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
                          </svg>
                          回首頁
                      </button>
                  </div>
-                 <p class="text-gray-600 dark:text-gray-400 mb-6" id="share-filename">正在準備檔案...</p>
-                 <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 dark:bg-yellow-900 dark:border-yellow-600">
+                 <p class="text-gray-600 dark:text-gray-400 mb-6 text-center" id="share-filename">正在準備檔案...</p>
+                 <div id="share-master-pass-prompt" class="hidden mb-4 p-4 glass-card rounded-xl border-l-4 border-yellow-400 dark:border-yellow-600 scale-in">
                     <label for="share-master-password" class="block text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ 此檔案需要特殊密碼</label>
                     <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">請向分享者索取，並在此輸入：</p>
-                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
+                    <input type="password" id="share-master-password" class="mt-2 block w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-yellow-500 focus:ring-yellow-500">
                  </div>
-                 <div class="text-center"><button id="start-share-decompress-btn" class="w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800"><svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd"></path></svg>開始解壓縮並準備下載</button></div>
+                 <div class="text-center"><button id="start-share-decompress-btn" class="btn-ripple w-full inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 dark:focus:ring-green-800"><svg class="w-5 h-5 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5.5a.75.75 0 00.22.53l2.5 2.5a.75.75 0 001.06-1.06L10.75 10.19V5z" clip-rule="evenodd"></path></svg>開始解壓縮並準備下載</button></div>
             </div>
         </main>
 
