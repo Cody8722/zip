@@ -885,18 +885,46 @@
                     xhr.open('POST', endpoint, true);
                     writeDebugLog(`XHR: POST ${endpoint}`);
 
+                    let uploadStartTime = Date.now();
+                    let lastProgressUpdate = 0;
+
                     xhr.upload.addEventListener('progress', e => {
                         if (e.lengthComputable) {
                             const percentComplete = Math.round((e.loaded / e.total) * 100);
+
+                            // 計算上傳速度
+                            const elapsed = (Date.now() - uploadStartTime) / 1000; // 秒
+                            const speedMBps = (e.loaded / 1024 / 1024) / elapsed;
+
+                            // 更新進度條和文字
                             elements.uploadProgressBar.style.width = percentComplete + '%';
-                            elements.uploadProgressPercentage.textContent = percentComplete + '%';
+                            elements.uploadProgressPercentage.textContent = `${percentComplete}% (${speedMBps.toFixed(2)} MB/s)`;
+
+                            lastProgressUpdate = percentComplete;
+                            writeDebugLog(`上傳進度: ${percentComplete}% (${e.loaded}/${e.total} bytes, ${speedMBps.toFixed(2)} MB/s)`);
                         }
+                    });
+
+                    xhr.upload.addEventListener('loadstart', () => {
+                        uploadStartTime = Date.now();
+                        writeDebugLog('上傳開始');
                     });
 
                     xhr.onload = () => {
                         writeDebugLog(`XHR: 收到回應 - 狀態碼 ${xhr.status}`);
                         currentXHR = null;  // 清除 XHR 對象
-                        elements.uploadProgressContainer.classList.add('hidden');
+
+                        // 如果上傳進度沒有達到 100%，手動設置
+                        if (lastProgressUpdate < 100) {
+                            elements.uploadProgressBar.style.width = '100%';
+                            elements.uploadProgressPercentage.textContent = '100%';
+                        }
+
+                        // 延遲隱藏上傳進度條，讓用戶看到 100%
+                        setTimeout(() => {
+                            elements.uploadProgressContainer.classList.add('hidden');
+                        }, 500);
+
                         try {
                             const data = JSON.parse(xhr.responseText);
                             writeDebugLog("收到的 JSON 資料:", data);
@@ -941,7 +969,7 @@
                         elements.progressSection.classList.add('hidden');
                         elements.mainView.classList.remove('hidden');
                     };
-                    
+
                     if (formData instanceof FormData) {
                         xhr.send(formData);
                     } else {
