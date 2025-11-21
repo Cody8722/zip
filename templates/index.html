@@ -421,7 +421,15 @@
             </div>
             
             <div id="progress-section" class="hidden fade-in mt-8">
-                 <h2 class="text-2xl font-semibold mb-4 border-b pb-2 dark:border-gray-700">處理進度</h2>
+                 <div class="flex justify-between items-center mb-4 border-b pb-2 dark:border-gray-700">
+                     <h2 class="text-2xl font-semibold">處理進度</h2>
+                     <button id="back-to-home-from-progress" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md transition">
+                         <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                             <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                         </svg>
+                         回首頁
+                     </button>
+                 </div>
                  
                  <div id="upload-progress-container" class="mb-4 hidden">
                     <div class="flex justify-between mb-1"><span class="text-base font-medium text-gray-700 dark:text-gray-300">正在上傳檔案...</span><span id="upload-progress-percentage" class="text-sm font-medium text-gray-700 dark:text-gray-300">0%</span></div>
@@ -445,7 +453,15 @@
             </div>
 
             <div id="share-view-section" class="hidden">
-                 <h2 class="text-2xl font-semibold mb-2 text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
+                 <div class="flex justify-between items-center mb-2">
+                     <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">一鍵解壓縮分享</h2>
+                     <button id="back-to-home-from-share" class="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 rounded-md transition">
+                         <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                             <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd" />
+                         </svg>
+                         回首頁
+                     </button>
+                 </div>
                  <p class="text-gray-600 dark:text-gray-400 mb-6" id="share-filename">正在準備檔案...</p>
                  <div id="share-master-pass-prompt" class="hidden mb-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 dark:bg-yellow-900 dark:border-yellow-600">
                     <label for="share-master-password" class="block text-sm font-medium text-yellow-800 dark:text-yellow-200">⚠️ 此檔案需要特殊密碼</label>
@@ -1599,6 +1615,53 @@
                     localStorage.setItem('color-theme', isDark ? 'dark' : 'light');
                     updateThemeIcons(isDark);
                 });
+
+                // 回首頁按鈕事件處理
+                document.getElementById('back-to-home-from-progress')?.addEventListener('click', () => {
+                    // 如果有正在執行的任務，提示用戶
+                    if (currentTaskId) {
+                        ConfirmDialog.show(
+                            '確認返回',
+                            '目前有任務正在執行中，返回首頁後仍會繼續處理。\n您可以稍後在歷史記錄中查看結果。'
+                        ).then(confirmed => {
+                            if (confirmed) {
+                                goBackToHome();
+                            }
+                        });
+                    } else {
+                        goBackToHome();
+                    }
+                });
+
+                document.getElementById('back-to-home-from-share')?.addEventListener('click', () => {
+                    goBackToHome();
+                });
+
+                function goBackToHome() {
+                    // 清除輪詢
+                    if (pollingTimeoutId) {
+                        clearTimeout(pollingTimeoutId);
+                        pollingTimeoutId = null;
+                    }
+                    // 重置變數
+                    currentTaskId = null;
+                    currentXHR = null;
+                    compressionStartTime = null;
+                    completedLayers = 0;
+
+                    // 隱藏所有 section
+                    elements.progressSection.classList.add('hidden');
+                    elements.shareView.classList.add('hidden');
+
+                    // 顯示主視圖並切換到壓縮 tab
+                    elements.mainView.classList.remove('hidden');
+                    switchTab('compress');
+
+                    // 捲動到頂部
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                    Toast.info('已返回首頁');
+                }
 
                 // 格式勾選框變更處理
                 function updateFormatString() {
