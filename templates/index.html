@@ -1597,9 +1597,41 @@
                     }
 
                     if (history.length === 0) {
-                        elements.historyList.innerHTML = searchTerm
-                            ? '<p class="text-center text-gray-500 dark:text-gray-400">找不到符合的壓縮紀錄。</p>'
-                            : '<p class="text-center text-gray-500 dark:text-gray-400">尚無任何壓縮紀錄。</p>';
+                        const emptyStateHTML = searchTerm
+                            ? `
+                                <div class="text-center py-12 scale-in">
+                                    <div class="mb-4">
+                                        <svg class="mx-auto h-24 w-24 text-gray-400 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                        </svg>
+                                    </div>
+                                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">找不到符合的壓縮紀錄</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">試試搜尋其他關鍵字，或清除搜尋條件</p>
+                                    <button onclick="document.getElementById('history-search').value = ''; renderHistory('');" class="btn-ripple px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                                        清除搜尋
+                                    </button>
+                                </div>
+                            `
+                            : `
+                                <div class="text-center py-16 scale-in">
+                                    <div class="mb-6">
+                                        <svg class="mx-auto h-32 w-32 text-gray-300 dark:text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                                        </svg>
+                                    </div>
+                                    <h3 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">尚無壓縮紀錄</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                        開始壓縮您的第一個檔案，所有記錄將會顯示在這裡！
+                                    </p>
+                                    <button onclick="switchTab('compress')" class="btn-ripple px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition inline-flex items-center gap-2">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                        </svg>
+                                        開始第一次壓縮
+                                    </button>
+                                </div>
+                            `;
+                        elements.historyList.innerHTML = emptyStateHTML;
                         return;
                     }
 
@@ -1649,10 +1681,11 @@
                                     <p class="font-semibold text-blue-600 dark:text-blue-400">${iterations} 層</p>
                                 </div>
                             </div>
-                            <div class="flex gap-2 justify-end">
-                                <button data-id="${item.id}" class="history-share-btn px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">📤 分享</button>
-                                <button data-id="${item.id}" class="history-qr-btn px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600">📱 QR</button>
-                                <button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600">🗑️ 刪除</button>
+                            <div class="flex gap-2 justify-end flex-wrap">
+                                <button data-id="${item.id}" class="history-copy-link-btn btn-ripple px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition">🔗 複製連結</button>
+                                <button data-id="${item.id}" class="history-share-btn btn-ripple px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition">📤 分享</button>
+                                <button data-id="${item.id}" class="history-qr-btn btn-ripple px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition">📱 QR</button>
+                                <button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn btn-ripple px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition">🗑️ 刪除</button>
                             </div>
                         `;
                         elements.historyList.appendChild(div);
@@ -1868,11 +1901,30 @@
                     const target = e.target;
                     const taskId = target.dataset.id;
                     if (!taskId) return;
-                    if (target.classList.contains("history-share-btn")) {
+
+                    if (target.classList.contains("history-copy-link-btn")) {
+                        // 複製連結功能
                         const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
                         navigator.clipboard.writeText(url).then(() => {
-                            target.textContent = "已複製!";
-                            setTimeout(() => target.textContent = "分享", 2000);
+                            const originalText = target.innerHTML;
+                            target.innerHTML = '✅ 已複製!';
+                            target.classList.remove('bg-purple-500', 'hover:bg-purple-600');
+                            target.classList.add('bg-green-500');
+                            Toast.success('分享連結已複製到剪貼簿！');
+                            setTimeout(() => {
+                                target.innerHTML = originalText;
+                                target.classList.remove('bg-green-500');
+                                target.classList.add('bg-purple-500', 'hover:bg-purple-600');
+                            }, 2000);
+                        }).catch(err => {
+                            writeDebugLog(`複製失敗: ${err.message}`, null, true);
+                            Toast.error('複製失敗，請手動複製連結');
+                        });
+                    } else if (target.classList.contains("history-share-btn")) {
+                        const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
+                        navigator.clipboard.writeText(url).then(() => {
+                            target.textContent = "✅ 已複製!";
+                            setTimeout(() => target.textContent = "📤 分享", 2000);
                         });
                     } else if (target.classList.contains("history-qr-btn")) {
                         showQrCode(taskId);
