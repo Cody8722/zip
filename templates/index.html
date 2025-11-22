@@ -595,6 +595,82 @@
         .dark ::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.1);
         }
+
+        /* === A2: 工具提示氣泡 === */
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tooltip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: help;
+            margin-left: 6px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+
+        .tooltip-icon:hover {
+            transform: scale(1.15);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.5);
+        }
+
+        .tooltip-bubble {
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%) translateY(-4px);
+            background: linear-gradient(135deg, #1e293b, #334155);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: normal;
+            max-width: 280px;
+            min-width: 200px;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+        }
+
+        .tooltip-bubble::before {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #1e293b;
+        }
+
+        .tooltip-container:hover .tooltip-bubble {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .dark .tooltip-bubble {
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        }
+
+        .dark .tooltip-bubble::before {
+            border-top-color: #3b82f6;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300 transition-colors duration-300">
@@ -681,6 +757,40 @@
                         </div>
                     </div>
 
+                    <!-- A5: Recommended Settings Quick Buttons -->
+                    <div class="mb-6 glass-card rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">💡 使用情境推薦</h3>
+                            <span class="text-xs text-gray-500 dark:text-gray-400">根據使用目的快速設定</span>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <!-- File Sharing -->
+                            <button type="button" onclick="applyScenarioSettings('sharing')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 rounded-lg hover:shadow-md transition border border-blue-200 dark:border-blue-700">
+                                <div class="text-2xl mb-1">📤</div>
+                                <p class="text-xs font-semibold text-blue-800 dark:text-blue-200">文件分享</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">適度安全</p>
+                            </button>
+                            <!-- Confidential -->
+                            <button type="button" onclick="applyScenarioSettings('confidential')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900 dark:to-red-800 rounded-lg hover:shadow-md transition border border-red-200 dark:border-red-700">
+                                <div class="text-2xl mb-1">🔒</div>
+                                <p class="text-xs font-semibold text-red-800 dark:text-red-200">機密檔案</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">最高安全</p>
+                            </button>
+                            <!-- Quick Backup -->
+                            <button type="button" onclick="applyScenarioSettings('backup')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900 dark:to-yellow-800 rounded-lg hover:shadow-md transition border border-yellow-200 dark:border-yellow-700">
+                                <div class="text-2xl mb-1">💾</div>
+                                <p class="text-xs font-semibold text-yellow-800 dark:text-yellow-200">快速備份</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">速度優先</p>
+                            </button>
+                            <!-- Balanced -->
+                            <button type="button" onclick="applyScenarioSettings('balanced')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900 dark:to-indigo-800 rounded-lg hover:shadow-md transition border border-indigo-200 dark:border-indigo-700">
+                                <div class="text-2xl mb-1">⚖️</div>
+                                <p class="text-xs font-semibold text-indigo-800 dark:text-indigo-200">平衡模式</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">兼顧速度</p>
+                            </button>
+                        </div>
+                    </div>
+
                     <form id="compress-form" enctype="multipart/form-data">
                         <fieldset class="space-y-4">
                             <div id="drop-zone-compress" class="drop-zone rounded-lg p-8 text-center cursor-pointer">
@@ -696,13 +806,33 @@
                             </div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                                 <div>
-                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">壓縮層數 (1-50):</label>
+                                    <label for="iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        壓縮層數 (1-50):
+                                        <span class="tooltip-container">
+                                            <span class="tooltip-icon">?</span>
+                                            <span class="tooltip-bubble">
+                                                每一層都會將前一層的結果再次壓縮。<br>
+                                                建議：<strong>3-5層</strong>適合一般使用，<strong>10層以上</strong>適合機密檔案。
+                                            </span>
+                                        </span>
+                                    </label>
                                     <input type="number" id="iterations" name="iterations" value="3" min="1" max="50" placeholder="建議 3-5 層" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">層數越多越安全，但處理時間也越長（最多50層）</p>
                                     <p id="file-info-compress" class="mt-1 text-xs text-blue-600 dark:text-blue-400 hidden"></p>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">壓縮格式 (依序循環使用):</label>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        壓縮格式 (依序循環使用):
+                                        <span class="tooltip-container">
+                                            <span class="tooltip-icon">?</span>
+                                            <span class="tooltip-bubble">
+                                                系統會依照勾選順序循環使用格式。<br>
+                                                <strong>ZIP</strong>：通用性最佳<br>
+                                                <strong>7Z</strong>：壓縮率最高<br>
+                                                <strong>TAR.GZ</strong>：Linux標準格式
+                                            </span>
+                                        </span>
+                                    </label>
                                     <div class="space-y-2">
                                         <div class="flex items-center">
                                             <input type="checkbox" id="format-zip" value="zip" checked class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
@@ -721,7 +851,18 @@
                                 </div>
                             </div>
                             <div>
-                                <label for="encrypt_mode" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">加密設定:</label>
+                                <label for="encrypt_mode" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    加密設定:
+                                    <span class="tooltip-container">
+                                        <span class="tooltip-icon">?</span>
+                                        <span class="tooltip-bubble">
+                                            選擇哪些層數需要密碼保護。<br>
+                                            <strong>全部加密</strong>：所有層都需密碼（最安全）<br>
+                                            <strong>奇數層</strong>：第1,3,5...層需密碼<br>
+                                            <strong>自訂層數</strong>：自由指定要加密的層數
+                                        </span>
+                                    </span>
+                                </label>
                                 <select id="encrypt_mode" name="encrypt_mode" class="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
                                     <option value="none">不加密</option>
                                     <option value="all">全部加密 (最安全)</option>
@@ -807,7 +948,16 @@
                             <div class="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
                                 <div class="flex items-center mb-3">
                                     <input type="checkbox" id="enable_email" name="enable_email" class="h-5 w-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 cursor-pointer">
-                                    <label for="enable_email" class="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">📧 完成後寄送 Email 通知</label>
+                                    <label for="enable_email" class="ml-2 block text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                                        📧 完成後寄送 Email 通知
+                                        <span class="tooltip-container">
+                                            <span class="tooltip-icon">?</span>
+                                            <span class="tooltip-bubble">
+                                                壓縮完成後會自動寄送通知郵件到指定信箱，<br>
+                                                內含下載連結和密碼檔案，方便在其他裝置上下載。
+                                            </span>
+                                        </span>
+                                    </label>
                                 </div>
                                 <div id="email-notification-input" class="hidden ml-6 p-3 bg-gray-50 dark:bg-gray-700 rounded-md">
                                     <label for="recipient_email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email 信箱:</label>
@@ -1381,6 +1531,7 @@
                 let currentConfirmAction = null;
                 let pollingTimeoutId = null;  // 保存輪詢計時器ID
                 let currentXHR = null;  // 保存當前上傳的 XHR 對象，用於取消上傳
+                let lastSubmissionData = null;  // B3: 儲存最後的提交參數供重試使用
 
                 function setupDropZone(dropZone, fileInput, fileNameDisplay, fileInfoId) {
                     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
@@ -1404,6 +1555,9 @@
                 
                 function startTask(endpoint, formData) {
                     writeDebugLog(`--- 啟動任務: ${endpoint} ---`);
+
+                    // B3: 儲存提交數據供重試使用
+                    lastSubmissionData = { endpoint, formData };
 
                     // 清除之前的輪詢計時器（如果有）
                     if (pollingTimeoutId) {
@@ -1586,7 +1740,29 @@
                             writeDebugLog(`任務 ${taskId} 狀態更新為: ${data.status}`);
                             elements.resultTitle.textContent = `任務${data.status}！`;
                             elements.resultSection.classList.remove("hidden");
-                            if (data.status === "完成") displayResults(data);
+                            if (data.status === "完成") {
+                                displayResults(data);
+                            } else if (data.status === "失敗" && lastSubmissionData) {
+                                // B3: 顯示重試按鈕
+                                elements.resultButtons.innerHTML = '';
+                                const retryBtn = document.createElement("button");
+                                retryBtn.innerHTML = '🔄 重試';
+                                retryBtn.className = "btn-ripple w-full md:w-auto inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 transition";
+                                retryBtn.onclick = () => {
+                                    Toast.info('正在重試任務...');
+                                    startTask(lastSubmissionData.endpoint, lastSubmissionData.formData);
+                                };
+                                elements.resultButtons.appendChild(retryBtn);
+
+                                const backBtn = document.createElement("button");
+                                backBtn.innerHTML = '返回首頁';
+                                backBtn.className = "btn-ripple w-full md:w-auto inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-base font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 transition dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600";
+                                backBtn.onclick = () => {
+                                    elements.progressSection.classList.add('hidden');
+                                    elements.mainView.classList.remove('hidden');
+                                };
+                                elements.resultButtons.appendChild(backBtn);
+                            }
                             elements.cancelButton.classList.add("hidden");
                             currentTaskId = null;
                             // 重置時間估算變數
@@ -1700,7 +1876,16 @@
                         originalSize: task.original_size || 0,
                         finalSize: task.final_size || 0,
                         iterations: task.params.iterations || 1,
-                        formats: task.params.formats || []
+                        formats: task.params.formats || [],
+                        // C6: 儲存完整設定供再次壓縮使用
+                        settings: {
+                            iterations: task.params.iterations || 3,
+                            formats: task.params.formats || ['zip'],
+                            encrypt_mode: task.params.encrypt_mode || 'none',
+                            encrypt_odd: task.params.encrypt_odd || false,
+                            manual_layers: task.params.manual_layers || [],
+                            use_master_pass: task.params.use_master_pass || false
+                        }
                     };
                     history.unshift(newRecord);
                     if (history.length > 50) history.pop();
@@ -1806,6 +1991,7 @@
                                 </div>
                             </div>
                             <div class="flex gap-2 justify-end flex-wrap">
+                                <button data-id="${item.id}" class="history-recompress-btn btn-ripple px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition">🔄 再次壓縮</button>
                                 <button data-id="${item.id}" class="history-copy-link-btn btn-ripple px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition">🔗 複製連結</button>
                                 <button data-id="${item.id}" class="history-share-btn btn-ripple px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition">📤 分享</button>
                                 <button data-id="${item.id}" class="history-qr-btn btn-ripple px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition">📱 QR</button>
@@ -2026,7 +2212,51 @@
                     const taskId = target.dataset.id;
                     if (!taskId) return;
 
-                    if (target.classList.contains("history-copy-link-btn")) {
+                    // C6: 再次壓縮功能
+                    if (target.classList.contains("history-recompress-btn")) {
+                        const history = JSON.parse(localStorage.getItem('compressHistory') || '[]');
+                        const historyItem = history.find(item => item.id === taskId);
+
+                        if (!historyItem || !historyItem.settings) {
+                            Toast.error('無法載入壓縮設定');
+                            return;
+                        }
+
+                        // 切換到壓縮頁面
+                        switchTab('compress');
+
+                        // 套用設定
+                        const settings = historyItem.settings;
+                        document.getElementById('iterations').value = settings.iterations || 3;
+
+                        // 設定格式
+                        const formats = Array.isArray(settings.formats) ? settings.formats :
+                                      typeof settings.formats === 'string' ? settings.formats.split(',') :
+                                      ['zip'];
+                        ['zip', '7z', 'targz'].forEach(format => {
+                            const checkbox = document.getElementById(`format-${format}`);
+                            if (checkbox) {
+                                checkbox.checked = formats.includes(format);
+                            }
+                        });
+                        document.getElementById('formats').value = formats.join(',');
+
+                        // 設定加密模式
+                        const encryptMode = settings.encrypt_mode || 'none';
+                        document.getElementById('encrypt_mode').value = encryptMode;
+
+                        // 觸發加密模式變更事件以顯示相關選項
+                        const event = new Event('change');
+                        document.getElementById('encrypt_mode').dispatchEvent(event);
+
+                        // 顯示成功訊息
+                        Toast.success(`🔄 已套用「${historyItem.name}」的壓縮設定\n層數: ${settings.iterations}層，格式: ${formats.join(', ')}，加密: ${encryptMode}`);
+
+                        // 捲動到檔案上傳區
+                        setTimeout(() => {
+                            document.getElementById('drop-zone-compress')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 300);
+                    } else if (target.classList.contains("history-copy-link-btn")) {
                         // 複製連結功能
                         const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
                         navigator.clipboard.writeText(url).then(() => {
@@ -2461,6 +2691,71 @@
                         btn.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
                     });
                     event.target.closest('.template-btn')?.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
+                };
+
+                // A5: 使用情境推薦設定
+                window.applyScenarioSettings = function(scenarioType) {
+                    const scenarios = {
+                        'sharing': {
+                            iterations: 4,
+                            formats: ['zip', '7z'],
+                            encrypt_mode: 'odd',
+                            name: '文件分享',
+                            icon: '📤',
+                            description: '4層壓縮，奇數層加密，適合分享給他人'
+                        },
+                        'confidential': {
+                            iterations: 8,
+                            formats: ['zip', '7z', 'targz'],
+                            encrypt_mode: 'all',
+                            name: '機密檔案',
+                            icon: '🔒',
+                            description: '8層壓縮，全部加密，最高安全性保護'
+                        },
+                        'backup': {
+                            iterations: 2,
+                            formats: ['zip'],
+                            encrypt_mode: 'none',
+                            name: '快速備份',
+                            icon: '💾',
+                            description: '2層壓縮，無加密，快速完成備份'
+                        },
+                        'balanced': {
+                            iterations: 5,
+                            formats: ['zip', '7z'],
+                            encrypt_mode: 'odd',
+                            name: '平衡模式',
+                            icon: '⚖️',
+                            description: '5層壓縮，奇數層加密，兼顧速度與安全'
+                        }
+                    };
+
+                    const scenario = scenarios[scenarioType];
+                    if (!scenario) return;
+
+                    // 設定層數
+                    document.getElementById('iterations').value = scenario.iterations;
+
+                    // 設定格式
+                    ['zip', '7z', 'targz'].forEach(format => {
+                        const checkbox = document.getElementById(`format-${format}`);
+                        if (checkbox) {
+                            checkbox.checked = scenario.formats.includes(format);
+                        }
+                    });
+                    document.getElementById('formats').value = scenario.formats.join(',');
+
+                    // 設定加密模式
+                    document.getElementById('encrypt_mode').value = scenario.encrypt_mode;
+
+                    // 顯示詳細Toast通知
+                    Toast.success(`${scenario.icon} 已套用「${scenario.name}」\n${scenario.description}`);
+
+                    // 添加視覺反饋
+                    document.querySelectorAll('.scenario-btn').forEach(btn => {
+                        btn.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2');
+                    });
+                    event.target.closest('.scenario-btn')?.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2');
                 };
 
                 // 在壓縮按鈕點擊時保存參數（修改現有的監聽器）
