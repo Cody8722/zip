@@ -713,80 +713,37 @@
                 
                 <div id="compress-section">
                     <!-- 壓縮預設模板 -->
+                    <!-- 快速設定（合併簡化） -->
                     <div class="mb-6 glass-card rounded-xl p-4">
                         <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">🎯 快速模板</h3>
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">⚡ 快速設定</h3>
                             <button type="button" onclick="showKeyboardShortcutsHelp()" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">⌨️ 快捷鍵</button>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            <!-- 快速壓縮 -->
-                            <button type="button" onclick="applyCompressionTemplate('quick')" class="btn-ripple template-btn p-3 text-left bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900 dark:to-green-800 rounded-lg hover:shadow-md transition border border-green-200 dark:border-green-700">
-                                <div class="flex items-start gap-2">
-                                    <span class="text-2xl">⚡</span>
-                                    <div class="flex-1">
-                                        <p class="font-semibold text-green-800 dark:text-green-200 text-sm">快速壓縮</p>
-                                        <p class="text-xs text-green-600 dark:text-green-400 mt-1">3層 · ZIP · 無加密</p>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">適合快速分享</p>
-                                    </div>
-                                </div>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                            <button type="button" onclick="applyQuickSettings('quick')" class="btn-ripple quick-setting-btn p-2 text-center bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900 dark:to-green-800 rounded-lg hover:shadow-md transition border border-green-200 dark:border-green-700">
+                                <div class="text-xl mb-1">⚡</div>
+                                <p class="text-xs font-semibold text-green-800 dark:text-green-200">快速</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">3層·ZIP</p>
                             </button>
-
-                            <!-- 標準壓縮 -->
-                            <button type="button" onclick="applyCompressionTemplate('standard')" class="btn-ripple template-btn p-3 text-left bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 rounded-lg hover:shadow-md transition border border-blue-200 dark:border-blue-700">
-                                <div class="flex items-start gap-2">
-                                    <span class="text-2xl">🎯</span>
-                                    <div class="flex-1">
-                                        <p class="font-semibold text-blue-800 dark:text-blue-200 text-sm">標準壓縮</p>
-                                        <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">5層 · 混合 · 奇數層加密</p>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">平衡速度與安全</p>
-                                    </div>
-                                </div>
+                            <button type="button" onclick="applyQuickSettings('standard')" class="btn-ripple quick-setting-btn p-2 text-center bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 rounded-lg hover:shadow-md transition border border-blue-200 dark:border-blue-700">
+                                <div class="text-xl mb-1">🎯</div>
+                                <p class="text-xs font-semibold text-blue-800 dark:text-blue-200">標準</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">5層·混合</p>
                             </button>
-
-                            <!-- 最大安全 -->
-                            <button type="button" onclick="applyCompressionTemplate('maximum')" class="btn-ripple template-btn p-3 text-left bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900 dark:to-purple-800 rounded-lg hover:shadow-md transition border border-purple-200 dark:border-purple-700">
-                                <div class="flex items-start gap-2">
-                                    <span class="text-2xl">🔒</span>
-                                    <div class="flex-1">
-                                        <p class="font-semibold text-purple-800 dark:text-purple-200 text-sm">最大安全</p>
-                                        <p class="text-xs text-purple-600 dark:text-purple-400 mt-1">10層 · 混合 · 全加密</p>
-                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">最高安全性</p>
-                                    </div>
-                                </div>
+                            <button type="button" onclick="applyQuickSettings('sharing')" class="btn-ripple quick-setting-btn p-2 text-center bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900 dark:to-indigo-800 rounded-lg hover:shadow-md transition border border-indigo-200 dark:border-indigo-700">
+                                <div class="text-xl mb-1">📤</div>
+                                <p class="text-xs font-semibold text-indigo-800 dark:text-indigo-200">分享</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">4層·加密</p>
                             </button>
-                        </div>
-                    </div>
-
-                    <!-- A5: Recommended Settings Quick Buttons -->
-                    <div class="mb-6 glass-card rounded-xl p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">💡 使用情境推薦</h3>
-                            <span class="text-xs text-gray-500 dark:text-gray-400">根據使用目的快速設定</span>
-                        </div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            <!-- File Sharing -->
-                            <button type="button" onclick="applyScenarioSettings('sharing')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 rounded-lg hover:shadow-md transition border border-blue-200 dark:border-blue-700">
-                                <div class="text-2xl mb-1">📤</div>
-                                <p class="text-xs font-semibold text-blue-800 dark:text-blue-200">文件分享</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">適度安全</p>
+                            <button type="button" onclick="applyQuickSettings('confidential')" class="btn-ripple quick-setting-btn p-2 text-center bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900 dark:to-red-800 rounded-lg hover:shadow-md transition border border-red-200 dark:border-red-700">
+                                <div class="text-xl mb-1">🔒</div>
+                                <p class="text-xs font-semibold text-red-800 dark:text-red-200">機密</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">8層·全密</p>
                             </button>
-                            <!-- Confidential -->
-                            <button type="button" onclick="applyScenarioSettings('confidential')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900 dark:to-red-800 rounded-lg hover:shadow-md transition border border-red-200 dark:border-red-700">
-                                <div class="text-2xl mb-1">🔒</div>
-                                <p class="text-xs font-semibold text-red-800 dark:text-red-200">機密檔案</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">最高安全</p>
-                            </button>
-                            <!-- Quick Backup -->
-                            <button type="button" onclick="applyScenarioSettings('backup')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900 dark:to-yellow-800 rounded-lg hover:shadow-md transition border border-yellow-200 dark:border-yellow-700">
-                                <div class="text-2xl mb-1">💾</div>
-                                <p class="text-xs font-semibold text-yellow-800 dark:text-yellow-200">快速備份</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">速度優先</p>
-                            </button>
-                            <!-- Balanced -->
-                            <button type="button" onclick="applyScenarioSettings('balanced')" class="btn-ripple scenario-btn p-3 text-center bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-900 dark:to-indigo-800 rounded-lg hover:shadow-md transition border border-indigo-200 dark:border-indigo-700">
-                                <div class="text-2xl mb-1">⚖️</div>
-                                <p class="text-xs font-semibold text-indigo-800 dark:text-indigo-200">平衡模式</p>
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">兼顧速度</p>
+                            <button type="button" onclick="applyQuickSettings('backup')" class="btn-ripple quick-setting-btn p-2 text-center bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900 dark:to-yellow-800 rounded-lg hover:shadow-md transition border border-yellow-200 dark:border-yellow-700">
+                                <div class="text-xl mb-1">💾</div>
+                                <p class="text-xs font-semibold text-yellow-800 dark:text-yellow-200">備份</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">2層·無密</p>
                             </button>
                         </div>
                     </div>
@@ -1991,10 +1948,8 @@
                                 </div>
                             </div>
                             <div class="flex gap-2 justify-end flex-wrap">
-                                <button data-id="${item.id}" class="history-recompress-btn btn-ripple px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition">🔄 再次壓縮</button>
-                                <button data-id="${item.id}" class="history-copy-link-btn btn-ripple px-3 py-1 text-sm bg-purple-500 text-white rounded hover:bg-purple-600 transition">🔗 複製連結</button>
-                                <button data-id="${item.id}" class="history-share-btn btn-ripple px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition">📤 分享</button>
-                                <button data-id="${item.id}" class="history-qr-btn btn-ripple px-3 py-1 text-sm bg-green-500 text-white rounded hover:bg-green-600 transition">📱 QR</button>
+                                <button data-id="${item.id}" class="history-recompress-btn btn-ripple px-3 py-1 text-sm bg-indigo-500 text-white rounded hover:bg-indigo-600 transition">🔄 重用</button>
+                                <button data-id="${item.id}" class="history-copy-link-btn btn-ripple px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition">🔗 分享</button>
                                 <button data-id="${item.id}" data-token="${item.token}" class="history-delete-btn btn-ripple px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 transition">🗑️ 刪除</button>
                             </div>
                         `;
@@ -2257,31 +2212,23 @@
                             document.getElementById('drop-zone-compress')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         }, 300);
                     } else if (target.classList.contains("history-copy-link-btn")) {
-                        // 複製連結功能
+                        // 複製分享連結
                         const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
                         navigator.clipboard.writeText(url).then(() => {
                             const originalText = target.innerHTML;
                             target.innerHTML = '✅ 已複製!';
-                            target.classList.remove('bg-purple-500', 'hover:bg-purple-600');
+                            target.classList.remove('bg-blue-500', 'hover:bg-blue-600');
                             target.classList.add('bg-green-500');
                             Toast.success('分享連結已複製到剪貼簿！');
                             setTimeout(() => {
                                 target.innerHTML = originalText;
                                 target.classList.remove('bg-green-500');
-                                target.classList.add('bg-purple-500', 'hover:bg-purple-600');
+                                target.classList.add('bg-blue-500', 'hover:bg-blue-600');
                             }, 2000);
                         }).catch(err => {
                             writeDebugLog(`複製失敗: ${err.message}`, null, true);
                             Toast.error('複製失敗，請手動複製連結');
                         });
-                    } else if (target.classList.contains("history-share-btn")) {
-                        const url = `${window.location.origin}${window.location.pathname}?share_id=${taskId}`;
-                        navigator.clipboard.writeText(url).then(() => {
-                            target.textContent = "✅ 已複製!";
-                            setTimeout(() => target.textContent = "📤 分享", 2000);
-                        });
-                    } else if (target.classList.contains("history-qr-btn")) {
-                        showQrCode(taskId);
                     } else if (target.classList.contains("history-delete-btn")) {
                         const token = target.dataset.token;
                         promptDeleteFile(taskId, token);
@@ -2639,123 +2586,72 @@
                 // ============================================
                 // 功能: 壓縮預設模板
                 // ============================================
-                window.applyCompressionTemplate = function(templateType) {
-                    const templates = {
+                // 合併後的快速設定函數
+                window.applyQuickSettings = function(settingType) {
+                    const settings = {
                         'quick': {
                             iterations: 3,
                             formats: ['zip'],
                             encrypt_mode: 'none',
-                            name: '快速壓縮',
+                            name: '快速',
                             icon: '⚡'
                         },
                         'standard': {
                             iterations: 5,
                             formats: ['zip', '7z', 'targz'],
                             encrypt_mode: 'odd',
-                            name: '標準壓縮',
+                            name: '標準',
                             icon: '🎯'
                         },
-                        'maximum': {
-                            iterations: 10,
-                            formats: ['zip', '7z', 'targz'],
-                            encrypt_mode: 'all',
-                            name: '最大安全',
-                            icon: '🔒'
-                        }
-                    };
-
-                    const template = templates[templateType];
-                    if (!template) return;
-
-                    // 設定層數
-                    document.getElementById('iterations').value = template.iterations;
-
-                    // 設定格式
-                    ['zip', '7z', 'targz'].forEach(format => {
-                        const checkbox = document.getElementById(`format-${format}`);
-                        if (checkbox) {
-                            checkbox.checked = template.formats.includes(format);
-                        }
-                    });
-                    // 更新隱藏的 formats 欄位
-                    document.getElementById('formats').value = template.formats.join(',');
-
-                    // 設定加密模式
-                    document.getElementById('encrypt_mode').value = template.encrypt_mode;
-
-                    // 顯示Toast通知
-                    Toast.success(`${template.icon} 已套用「${template.name}」模板`);
-
-                    // 添加視覺反饋
-                    document.querySelectorAll('.template-btn').forEach(btn => {
-                        btn.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
-                    });
-                    event.target.closest('.template-btn')?.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
-                };
-
-                // A5: 使用情境推薦設定
-                window.applyScenarioSettings = function(scenarioType) {
-                    const scenarios = {
                         'sharing': {
                             iterations: 4,
                             formats: ['zip', '7z'],
                             encrypt_mode: 'odd',
-                            name: '文件分享',
-                            icon: '📤',
-                            description: '4層壓縮，奇數層加密，適合分享給他人'
+                            name: '分享',
+                            icon: '📤'
                         },
                         'confidential': {
                             iterations: 8,
                             formats: ['zip', '7z', 'targz'],
                             encrypt_mode: 'all',
-                            name: '機密檔案',
-                            icon: '🔒',
-                            description: '8層壓縮，全部加密，最高安全性保護'
+                            name: '機密',
+                            icon: '🔒'
                         },
                         'backup': {
                             iterations: 2,
                             formats: ['zip'],
                             encrypt_mode: 'none',
-                            name: '快速備份',
-                            icon: '💾',
-                            description: '2層壓縮，無加密，快速完成備份'
-                        },
-                        'balanced': {
-                            iterations: 5,
-                            formats: ['zip', '7z'],
-                            encrypt_mode: 'odd',
-                            name: '平衡模式',
-                            icon: '⚖️',
-                            description: '5層壓縮，奇數層加密，兼顧速度與安全'
+                            name: '備份',
+                            icon: '💾'
                         }
                     };
 
-                    const scenario = scenarios[scenarioType];
-                    if (!scenario) return;
+                    const setting = settings[settingType];
+                    if (!setting) return;
 
                     // 設定層數
-                    document.getElementById('iterations').value = scenario.iterations;
+                    document.getElementById('iterations').value = setting.iterations;
 
                     // 設定格式
                     ['zip', '7z', 'targz'].forEach(format => {
                         const checkbox = document.getElementById(`format-${format}`);
                         if (checkbox) {
-                            checkbox.checked = scenario.formats.includes(format);
+                            checkbox.checked = setting.formats.includes(format);
                         }
                     });
-                    document.getElementById('formats').value = scenario.formats.join(',');
+                    document.getElementById('formats').value = setting.formats.join(',');
 
                     // 設定加密模式
-                    document.getElementById('encrypt_mode').value = scenario.encrypt_mode;
+                    document.getElementById('encrypt_mode').value = setting.encrypt_mode;
 
-                    // 顯示詳細Toast通知
-                    Toast.success(`${scenario.icon} 已套用「${scenario.name}」\n${scenario.description}`);
+                    // 簡潔Toast通知
+                    Toast.success(`${setting.icon} 已套用「${setting.name}」設定`);
 
-                    // 添加視覺反饋
-                    document.querySelectorAll('.scenario-btn').forEach(btn => {
-                        btn.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-2');
+                    // 視覺反饋
+                    document.querySelectorAll('.quick-setting-btn').forEach(btn => {
+                        btn.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2');
                     });
-                    event.target.closest('.scenario-btn')?.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-2');
+                    event.target.closest('.quick-setting-btn')?.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2');
                 };
 
                 // 在壓縮按鈕點擊時保存參數（修改現有的監聽器）
