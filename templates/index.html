@@ -1169,8 +1169,8 @@
             show(title, message) {
                 if (!this.dialog) this.init();
 
-                this.title.textContent = title;
-                this.message.textContent = message;
+                this.title.innerHTML = title;
+                this.message.innerHTML = message;
                 this.dialog.classList.add('visible');
 
                 return new Promise((resolve) => {
