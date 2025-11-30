@@ -281,6 +281,23 @@ def calculate_encrypt_layers(encrypt_mode, iterations, manual_layers=None, multi
     else:
         return set()
 
+def validate_object_id(id_string):
+    """
+    驗證 ObjectId 字符串格式是否有效
+
+    參數:
+        id_string: 要驗證的字符串
+
+    返回:
+        (ObjectId, None) 如果有效
+        (None, error_message) 如果無效
+    """
+    try:
+        return ObjectId(id_string), None
+    except Exception:
+        return None, '無效的任務 ID 格式'
+
+
 def generate_password(filename, salt, length=16):
     """
     使用檔案名稱和鹽通過 SHA-256 生成確定性密碼
@@ -1274,11 +1291,16 @@ def decompress_manual_route():
 
 @app.route('/start-shared-decompression/<compress_task_id>', methods=['POST'])
 def start_shared_decompression(compress_task_id):
+    # 驗證 ObjectId 格式
+    object_id, error = validate_object_id(compress_task_id)
+    if error:
+        return jsonify({'error': error}), 400
+
     if active_task_count >= MAX_CONCURRENT_TASKS:
         return jsonify({'error': '伺服器目前忙碌中，請稍後再試。'}), 429
     try:
         if db is None: return jsonify({'error': '資料庫未連線'}), 500
-        original_task = tasks_collection.find_one({'_id': ObjectId(compress_task_id)})
+        original_task = tasks_collection.find_one({'_id': object_id})
         if not original_task or 'result_file_id' not in original_task: raise ValueError("找不到原始壓縮任務或檔案可能已被刪除。")
         
         ip_address = request.headers.get('X-Forwarded-For', request.remote_addr)
@@ -1427,21 +1449,31 @@ def storage_stats():
 
 @app.route('/cancel/<task_id>', methods=['POST'])
 def cancel_task(task_id):
+    # 驗證 ObjectId 格式
+    object_id, error = validate_object_id(task_id)
+    if error:
+        return jsonify({'error': error}), 400
+
     try:
-        tasks_collection.update_one({'_id': ObjectId(task_id)}, {'$set': {'cancel_requested': True}})
+        tasks_collection.update_one({'_id': object_id}, {'$set': {'cancel_requested': True}})
         return jsonify({'status': 'cancellation requested'})
     except Exception as e:
         return handle_route_exception(e, 'cancel')
 
 @app.route('/status/<task_id>')
 def task_status(task_id):
+    # 驗證 ObjectId 格式
+    object_id, error = validate_object_id(task_id)
+    if error:
+        return jsonify({'error': error}), 400
+
     try:
         # 1. 嘗試從快取獲取
         task = get_cached_task(task_id)
 
         # 2. 快取未命中，從資料庫讀取
         if not task:
-            task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+            task = tasks_collection.find_one({'_id': object_id})
             if task:
                 task['_id'] = str(task['_id'])
 
@@ -1556,8 +1588,13 @@ def download_password_file(task_id):
     - 舊格式：直接使用 password_file_content
     - 新格式：從 password_metadata 重新生成
     """
+    # 驗證 ObjectId 格式
+    object_id, error = validate_object_id(task_id)
+    if error:
+        return error, 400
+
     try:
-        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        task = tasks_collection.find_one({'_id': object_id})
         if not task:
             return "任務不存在。", 404
 
@@ -1592,8 +1629,13 @@ def download_password_file(task_id):
 
 @app.route('/download/<task_id>')
 def download_file(task_id):
+    # 驗證 ObjectId 格式
+    object_id, error = validate_object_id(task_id)
+    if error:
+        return error, 400
+
     try:
-        task = tasks_collection.find_one({'_id': ObjectId(task_id)})
+        task = tasks_collection.find_one({'_id': object_id})
         if not task or 'result_file_id' not in task:
             return "檔案可能已被刪除或不存在。", 404
         
