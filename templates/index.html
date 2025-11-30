@@ -1641,7 +1641,11 @@
                     }
                     writeDebugLog("XHR: 請求已送出。");
                 }
-                
+
+                // 壓縮時間估算相關變數（需在 checkStatus 函數之前宣告）
+                let compressionStartTime = null;
+                let completedLayers = 0;
+
                 async function checkStatus(taskId) {
                     if (!taskId) {
                         writeDebugLog("checkStatus 被呼叫，但 taskId 為 null。", null, true);
@@ -2723,8 +2727,7 @@
                 // ============================================
                 // 功能 2: 壓縮時間估算
                 // ============================================
-                let compressionStartTime = null;
-                let completedLayers = 0;
+                // 注意：compressionStartTime 和 completedLayers 已在檔案前面宣告
 
                 // 在 checkStatus 中添加時間估算邏輯（需要修改現有的 checkStatus 函數）
                 const originalCheckStatus = window.checkStatus;
