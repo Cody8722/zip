@@ -1166,11 +1166,19 @@
                 });
             },
 
-            show(title, message) {
+            show(title, message, allowHTML = false) {
                 if (!this.dialog) this.init();
 
-                this.title.innerHTML = title;
-                this.message.innerHTML = message;
+                // 安全性：默認使用 textContent 防止 XSS
+                // 只有在明確傳入 allowHTML=true 且內容可信時才使用 innerHTML
+                if (allowHTML) {
+                    this.title.innerHTML = title;
+                    this.message.innerHTML = message;
+                } else {
+                    this.title.textContent = title;
+                    this.message.textContent = message;
+                }
+
                 this.dialog.classList.add('visible');
 
                 return new Promise((resolve) => {
@@ -1337,8 +1345,7 @@
             ConfirmDialog.show(
                 '⌨️ 鍵盤快捷鍵',
                 `<div class="space-y-2 text-left">${shortcutsHTML}</div><p class="mt-4 text-xs text-gray-500 dark:text-gray-400 text-center">提示：在 macOS 上使用 ⌘ (Command)，在 Windows/Linux 上使用 Ctrl</p>`,
-                '知道了',
-                null
+                true  // allowHTML: 內容是可信的（由程式生成）
             );
         }
 
