@@ -2134,17 +2134,22 @@
                     writeDebugLog("偵測到表單的 Submit 事件 (已攔截)，將觸發按鈕點擊。");
                     elements.startDecompressBtn.click();
                 });
-                
+
+                // Tab 切換函數
+                function switchTab(mode) {
+                    writeDebugLog(`切換到分頁: ${mode}`);
+                    Object.keys(elements.tabs).forEach(m => {
+                        elements.tabs[m].classList.toggle('active', m === mode);
+                        elements.sections[m].classList.toggle('hidden', m !== mode);
+                    });
+                    if (mode === 'history') {
+                        renderHistory();
+                    }
+                }
+
                 Object.keys(elements.tabs).forEach(mode => {
                     elements.tabs[mode].addEventListener('click', () => {
-                        writeDebugLog(`切換到分頁: ${mode}`);
-                        Object.keys(elements.tabs).forEach(m => {
-                            elements.tabs[m].classList.toggle('active', m === mode);
-                            elements.sections[m].classList.toggle('hidden', m !== mode);
-                        });
-                        if (mode === 'history') {
-                            renderHistory();
-                        }
+                        switchTab(mode);
                     });
                 });
 
