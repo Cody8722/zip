@@ -70,6 +70,9 @@ TASK_SALT_BYTES = 16  # 任務鹽值長度（16 bytes = 32 個字符）
 DELETE_TOKEN_BYTES = 16  # 刪除令牌長度（16 bytes = 32 個字符）
 RANDOM_FILENAME_BYTES = 8  # 隨機檔名長度（8 bytes = 16 個字符）
 
+# 清理標誌位（防止雙重清理）
+_cleanup_executed = False
+
 client = None; db = None; tasks_collection = None; fs = None
 try:
     if not MONGO_URI: raise ValueError("錯誤：找不到 MONGO_URI 環境變數。")
@@ -162,6 +165,14 @@ def cleanup_on_startup():
 
 def cleanup_on_exit():
     """應用程式退出時清理資源"""
+    global _cleanup_executed
+
+    # 防止重複執行（atexit 和 signal handler 都會調用）
+    if _cleanup_executed:
+        logging.info("⏭️ 清理已執行過，跳過")
+        return
+
+    _cleanup_executed = True
     logging.info("🔧 正在清理資源...")
 
     try:
