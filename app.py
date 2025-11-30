@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from cryptography.fernet import Fernet
 import redis
 import json
+from typing import Optional, Dict, Any, Tuple, List
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
@@ -699,42 +700,257 @@ def task_wrapper(func, *args, **kwargs):
     finally:
         with task_lock:
             active_task_count -= 1
-        
+
+
+# ============================================================================
+# 壓縮輔助函數（Helper Functions for Compression）
+# ============================================================================
+
+def _load_task_data(task_id_str: str) -> Optional[Tuple[ObjectId, Dict[str, Any], Dict[str, Any], str, int]]:
+    """
+    加載任務數據和原始文件信息
+
+    參數:
+        task_id_str: 任務 ID 字符串
+
+    返回:
+        成功: (task_id, task, params, original_file, original_size)
+        失敗: None
+    """
+    try:
+        task_id = ObjectId(task_id_str)
+        task = tasks_collection.find_one({'_id': task_id})
+
+        if not task:
+            logging.warning(f"任務 {task_id_str} 不存在")
+            return None
+
+        params = task['params']
+        original_file = params['original_file']
+
+        if not os.path.exists(original_file):
+            logging.error(f"原始文件不存在: {original_file}")
+            return None
+
+        original_size = os.path.getsize(original_file)
+
+        return (task_id, task, params, original_file, original_size)
+
+    except Exception as e:
+        logging.error(f"加載任務數據失敗: {e}", exc_info=True)
+        return None
+
+
+def _initialize_compression(params: Dict[str, Any]) -> Tuple[str, Dict[str, Any], set]:
+    """
+    初始化壓縮參數（鹽值、元數據結構、加密層計算）
+
+    參數:
+        params: 任務參數字典
+
+    返回:
+        (task_salt, password_metadata, encrypt_layers)
+    """
+    # 生成任務鹽值
+    task_salt = secrets.token_hex(TASK_SALT_BYTES)
+
+    # 初始化密碼元數據結構
+    password_metadata = {
+        'task_salt': task_salt,
+        'layers': []
+    }
+
+    # 計算需要加密的層數
+    encrypt_layers = calculate_encrypt_layers(
+        params['encrypt_mode'],
+        params['iterations'],
+        params.get('manual_layers'),
+        params.get('multiple_interval', 3),
+        params.get('arithmetic_start', 1),
+        params.get('arithmetic_diff', 2)
+    )
+
+    logging.info(f"加密模式: {params['encrypt_mode']}, 加密層數: {sorted(encrypt_layers)}")
+
+    return (task_salt, password_metadata, encrypt_layers)
+
+
+def _generate_layer_password(
+    layer_num: int,
+    params: Dict[str, Any],
+    encrypt_layers: set,
+    filename_for_password: str,
+    task_salt: str,
+    format_name: str
+) -> Tuple[Optional[str], bool, bool, int]:
+    """
+    生成層密碼（根據加密模式和配置）
+
+    參數:
+        layer_num: 當前層數
+        params: 任務參數
+        encrypt_layers: 需要加密的層集合
+        filename_for_password: 用於生成密碼的文件名
+        task_salt: 任務鹽值
+        format_name: 壓縮格式名稱
+
+    返回:
+        (password, has_password, is_master, pwd_length)
+    """
+    password = None
+    has_password = False
+    is_master = False
+    pwd_length = 16
+
+    # 優先檢查特殊密碼（主密碼）
+    if params['use_master_pass'] and layer_num % params['master_pass_interval'] == 0:
+        password = params['master_pass']
+        has_password = True
+        is_master = True
+    # 然後檢查是否在加密層數列表中
+    elif layer_num in encrypt_layers:
+        if format_name in ('zip', '7z'):
+            has_password = True
+
+            # 確定此層的密碼長度
+            if params.get('use_custom_length'):
+                pwd_length = params['password_length_config'].get(
+                    layer_num,
+                    params['default_password_length']
+                )
+            else:
+                pwd_length = 16  # 默認長度
+
+            # 使用檔名和任務鹽生成 SHA-256 密碼
+            password = generate_password(filename_for_password, task_salt, pwd_length)
+
+    return (password, has_password, is_master, pwd_length)
+
+
+def _process_compression_layer(
+    current_file: str,
+    output_filename: str,
+    format_name: str,
+    password: Optional[str]
+) -> None:
+    """
+    處理單層壓縮邏輯
+
+    參數:
+        current_file: 當前要壓縮的文件路徑
+        output_filename: 輸出文件路徑
+        format_name: 壓縮格式名稱 ('zip', '7z', 'targz')
+        password: 加密密碼（None 表示不加密）
+    """
+    if format_name in ('zip', '7z'):
+        # py7zr 支持多線程壓縮
+        with py7zr.SevenZipFile(output_filename, 'w', password=password, mp=True) as z:
+            z.write(current_file, os.path.basename(current_file))
+    else:
+        # tarfile 不支持多線程，但可以使用壓縮等級
+        with tarfile.open(output_filename, 'w:gz', compresslevel=6) as tf:
+            tf.add(current_file, arcname=os.path.basename(current_file))
+
+
+def _finalize_compression(
+    task_id: ObjectId,
+    current_file: str,
+    original_size: int,
+    password_metadata: Dict[str, Any],
+    recipient_email: Optional[str],
+    host_url: Optional[str],
+    task_id_str: str,
+    raw_filename: str
+) -> None:
+    """
+    完成壓縮任務（上傳文件、更新狀態、發送郵件）
+
+    參數:
+        task_id: 任務 ObjectId
+        current_file: 最終壓縮文件路徑
+        original_size: 原始文件大小（bytes）
+        password_metadata: 密碼元數據字典
+        recipient_email: 收件人郵箱（可選）
+        host_url: 主機 URL（可選）
+        task_id_str: 任務 ID 字符串
+        raw_filename: 原始文件名
+    """
+    # 計算壓縮率
+    final_size = os.path.getsize(current_file)
+    compression_ratio = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+    update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
+
+    # 上傳到雲端儲存
+    update_task_log(task_id, "☁️ 正在上傳至雲端儲存...", is_progress_text=True)
+    with open(current_file, 'rb') as f_in:
+        file_id = fs.put(f_in, filename=os.path.basename(current_file))
+    os.remove(current_file)
+    update_task_log(task_id, "✅ 檔案已上傳至雲端儲存")
+
+    # 生成安全令牌
+    delete_token = secrets.token_hex(DELETE_TOKEN_BYTES)
+
+    # 儲存任務結果
+    update_task_log(task_id, "💾 正在儲存任務資訊...", is_progress_text=True)
+    tasks_collection.update_one({'_id': task_id}, {'$set': {
+        'status': '完成', 'progress': 100,
+        'result_file_id': str(file_id),
+        'result_filename': os.path.basename(current_file),
+        'password_metadata': password_metadata,
+        'delete_token': delete_token,
+        'original_size': original_size,
+        'final_size': final_size,
+        'compression_ratio': round(compression_ratio, 2)
+    }})
+
+    # 發送郵件通知
+    if recipient_email and host_url:
+        try:
+            send_completion_email(recipient_email, task_id_str, raw_filename, host_url)
+            update_task_log(task_id, f"✅ 已成功寄送通知信至: {recipient_email}")
+        except Exception as e:
+            update_task_log(task_id, f"⚠️ 寄送通知信失敗: {e}")
+
+
+def _cleanup_files(files_to_clean: List[str]) -> None:
+    """
+    清理臨時文件
+
+    參數:
+        files_to_clean: 要清理的文件路徑列表
+    """
+    for temp_file in files_to_clean:
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+                logging.info(f"已清理文件: {temp_file}")
+            except Exception as e:
+                logging.error(f"清理文件失敗 {temp_file}: {e}")
+
+
 def compression_worker(task_id_str, recipient_email=None, host_url=None):
-    task_id = ObjectId(task_id_str)
-    task = tasks_collection.find_one({'_id': task_id});
-    if not task: return
-    params = task['params']; original_file = params['original_file']
-    # 記錄原始文件大小用於壓縮率計算
-    original_size = os.path.getsize(original_file)
+    # 加載任務數據
+    task_data = _load_task_data(task_id_str)
+    if not task_data:
+        return
+
+    task_id, task, params, original_file, original_size = task_data
+
     # 追蹤所有生成的檔案以便失敗時清理
     generated_files = []
+
     try:
         iterations = params['iterations']
-        # 為本次任務生成唯一的鹽（基於 task_id 和時間戳）
-        task_salt = secrets.token_hex(TASK_SALT_BYTES)
 
-        # 新版本：使用元數據結構（不存儲明文密碼）
-        password_metadata = {
-            'task_salt': task_salt,
-            'layers': []
-        }
+        # 初始化壓縮參數
+        task_salt, password_metadata, encrypt_layers = _initialize_compression(params)
 
-        # 計算需要加密的層數
-        encrypt_layers = calculate_encrypt_layers(
-            params['encrypt_mode'],
-            iterations,
-            params.get('manual_layers'),
-            params.get('multiple_interval', 3),
-            params.get('arithmetic_start', 1),
-            params.get('arithmetic_diff', 2)
-        )
-        logging.info(f"加密模式: {params['encrypt_mode']}, 加密層數: {sorted(encrypt_layers)}")
-
-        formats = {'zip':'.zip', '7z':'.7z', 'targz':'.tar.gz'}
+        formats = {'zip': '.zip', '7z': '.7z', 'targz': '.tar.gz'}
         current_file = original_file
+
+        # 處理每一層壓縮
         for i in range(1, iterations + 1):
-            # 在每層開始前檢查取消狀態
+            # 檢查取消狀態
             task_status = safe_db_operation(
                 lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
                 "檢查取消狀態"
@@ -745,24 +961,16 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                     lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
                     "設定取消狀態"
                 )
-                # 清理已生成的中間檔案
-                for temp_file in generated_files:
-                    if os.path.exists(temp_file):
-                        try:
-                            os.remove(temp_file)
-                            logging.info(f"已清理取消任務的中間檔案: {temp_file}")
-                        except Exception as e:
-                            logging.error(f"清理中間檔案失敗: {e}")
+                _cleanup_files(generated_files)
                 return
+
+            # 確定格式和文件名
             format_name = params['formats'][(i - 1) % len(params['formats'])]
 
-            # 最後一層使用原始檔名，其他層使用隨機檔名
             if i == iterations:
-                # 最後一層：使用原始檔名（不含原副檔名）+ 短隨機碼 + 新格式副檔名
-                # 使用 secure_filename 清理檔名，防止路徑穿越
+                # 最後一層：使用原始檔名
                 safe_raw_filename = secure_filename(params['raw_filename'])
                 base_name = os.path.splitext(safe_raw_filename)[0]
-                # 加上隨機碼避免檔名衝突
                 unique_suffix = secrets.token_hex(FILENAME_UNIQUE_SUFFIX_BYTES)
                 final_filename = f"{base_name}_{unique_suffix}{formats[format_name]}"
                 output_filename = os.path.join(OUTPUT_FOLDER, final_filename)
@@ -773,31 +981,12 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 output_filename = os.path.join(OUTPUT_FOLDER, random_filename)
                 filename_for_password = random_filename
 
-            password = None
-            has_password = False
-            is_master = False
-            pwd_length = 16
+            # 生成層密碼
+            password, has_password, is_master, pwd_length = _generate_layer_password(
+                i, params, encrypt_layers, filename_for_password, task_salt, format_name
+            )
 
-            # 優先檢查特殊密碼
-            if params['use_master_pass'] and i % params['master_pass_interval'] == 0:
-                password = params['master_pass']
-                has_password = True
-                is_master = True
-            # 然後檢查是否在加密層數列表中
-            elif i in encrypt_layers:
-                if format_name in ('zip', '7z'):
-                    has_password = True
-                    # 確定此層的密碼長度
-                    if params.get('use_custom_length'):
-                        # 優先使用特定層的配置
-                        pwd_length = params['password_length_config'].get(i, params['default_password_length'])
-                    else:
-                        pwd_length = 16  # 默認長度
-
-                    # 使用檔名和任務鹽生成 SHA-256 密碼
-                    password = generate_password(filename_for_password, task_salt, pwd_length)
-
-            # 記錄到元數據
+            # 構建層元數據
             layer_metadata = {
                 'num': i,
                 'filename': os.path.basename(output_filename),
@@ -806,69 +995,40 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 'length': pwd_length if has_password and not is_master else None
             }
 
-            # 如果有密碼且不是主密碼，嘗試加密存儲
+            # 加密存儲密碼
             if password and not is_master:
                 encrypted_pwd = encrypt_password(password)
                 if encrypted_pwd:
-                    # 使用加密存儲（安全）
                     layer_metadata['encrypted_password'] = encrypted_pwd
                     logging.info(f"✅ 第 {i} 層密碼已加密存儲")
                 else:
-                    # 加密失敗，記錄警告（將使用元數據方式重新生成）
                     logging.warning(f"⚠️ 第 {i} 層密碼加密失敗，將使用元數據方式")
 
             password_metadata['layers'].append(layer_metadata)
+
+            # 更新進度日誌
             progress_text = f"正在壓縮第 {i}/{iterations} 層 (格式: {format_name})"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
 
-            # 執行壓縮（使用多線程加速）
-            if format_name in ('zip', '7z'):
-                # py7zr 支持多線程壓縮
-                with py7zr.SevenZipFile(output_filename, 'w', password=password, mp=True) as z:
-                    z.write(current_file, os.path.basename(current_file))
-            else:
-                # tarfile 不支持多線程，但可以使用壓縮等級
-                with tarfile.open(output_filename, 'w:gz', compresslevel=6) as tf:
-                    tf.add(current_file, arcname=os.path.basename(current_file))
+            # 執行壓縮
+            _process_compression_layer(current_file, output_filename, format_name, password)
 
-            # 追蹤生成的檔案
+            # 管理文件
             generated_files.append(output_filename)
-            if current_file != original_file: os.remove(current_file)
+            if current_file != original_file:
+                os.remove(current_file)
             current_file = output_filename
+
+            # 更新進度
             update_task_progress(task_id, int((i / iterations) * 100))
+
         update_task_log(task_id, "✅ 壓縮流程結束。", is_progress_text=True)
 
-        # 計算壓縮率
-        final_size = os.path.getsize(current_file)
-        compression_ratio = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
-        update_task_log(task_id, f"📊 壓縮率: {compression_ratio:.2f}% (原始: {original_size/1024:.2f} KB → 壓縮後: {final_size/1024:.2f} KB)")
-
-        # 上傳到雲端儲存
-        update_task_log(task_id, "☁️ 正在上傳至雲端儲存...", is_progress_text=True)
-        with open(current_file, 'rb') as f_in:
-            file_id = fs.put(f_in, filename=os.path.basename(current_file))
-        os.remove(current_file)
-        update_task_log(task_id, "✅ 檔案已上傳至雲端儲存")
-
-        # 生成安全令牌
-        delete_token = secrets.token_hex(DELETE_TOKEN_BYTES)
-
-        # 儲存任務結果
-        update_task_log(task_id, "💾 正在儲存任務資訊...", is_progress_text=True)
-        tasks_collection.update_one({'_id': task_id}, {'$set': {
-            'status': '完成', 'progress': 100,
-            'result_file_id': str(file_id), 'result_filename': os.path.basename(current_file),
-            'password_metadata': password_metadata,  # 新版本：元數據
-            'delete_token': delete_token,
-            'original_size': original_size, 'final_size': final_size, 'compression_ratio': round(compression_ratio, 2)
-        }})
-
-        if recipient_email and host_url:
-            try:
-                send_completion_email(recipient_email, task_id_str, params['raw_filename'], host_url)
-                update_task_log(task_id, f"✅ 已成功寄送通知信至: {recipient_email}")
-            except Exception as e:
-                update_task_log(task_id, f"⚠️ 寄送通知信失敗: {e}")
+        # 完成壓縮任務（上傳、更新狀態、發送郵件）
+        _finalize_compression(
+            task_id, current_file, original_size, password_metadata,
+            recipient_email, host_url, task_id_str, params['raw_filename']
+        )
     except (py7zr.Bad7zFile, zipfile.BadZipFile, tarfile.ReadError) as e:
         update_task_log(task_id, f"❌ 檔案格式錯誤或已損毀: {e}")
         safe_db_operation(
@@ -892,13 +1052,7 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
                 "查詢任務狀態"
             )
             if task_status and task_status.get('status') == '失敗':
-                for temp_file in generated_files:
-                    if os.path.exists(temp_file):
-                        try:
-                            os.remove(temp_file)
-                            logging.info(f"已清理失敗任務的檔案: {temp_file}")
-                        except Exception as cleanup_err:
-                            logging.error(f"清理檔案失敗: {cleanup_err}")
+                _cleanup_files(generated_files)
 
 def decompression_worker(task_id_str):
     task_id = ObjectId(task_id_str)
