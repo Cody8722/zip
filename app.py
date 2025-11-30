@@ -1338,7 +1338,15 @@ def get_decompression_logs():
         if not ADMIN_SECRET:
             return jsonify({'error': '伺服器未設定管理員密碼'}), 500
 
-        provided_secret = request.args.get('secret', '')
+        # 優先從 Authorization header 讀取（更安全）
+        # 格式：Authorization: Bearer <secret>
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            provided_secret = auth_header[7:]  # 移除 'Bearer ' 前綴
+        else:
+            # 向後兼容：仍支援 query parameter（但不建議使用）
+            provided_secret = request.args.get('secret', '')
+
         if not provided_secret:
             return jsonify({'error': '缺少管理員密碼'}), 401
 
