@@ -245,7 +245,14 @@ cleanup_thread.start()
 cleanup_on_startup()
 
 # --- 通用輔助函式 ---
-def calculate_encrypt_layers(encrypt_mode, iterations, manual_layers=None, multiple_interval=3, arithmetic_start=1, arithmetic_diff=2):
+def calculate_encrypt_layers(
+    encrypt_mode: str,
+    iterations: int,
+    manual_layers: Optional[List[int]] = None,
+    multiple_interval: int = 3,
+    arithmetic_start: int = 1,
+    arithmetic_diff: int = 2
+) -> set:
     """
     根據加密模式計算需要加密的層數列表
 
@@ -282,7 +289,7 @@ def calculate_encrypt_layers(encrypt_mode, iterations, manual_layers=None, multi
     else:
         return set()
 
-def validate_object_id(id_string):
+def validate_object_id(id_string: str) -> Tuple[Optional[ObjectId], Optional[str]]:
     """
     驗證 ObjectId 字符串格式是否有效
 
@@ -299,7 +306,7 @@ def validate_object_id(id_string):
         return None, '無效的任務 ID 格式'
 
 
-def generate_password(filename, salt, length=16):
+def generate_password(filename: str, salt: str, length: int = 16) -> str:
     """
     使用檔案名稱和鹽通過 SHA-256 生成確定性密碼
 
@@ -322,7 +329,7 @@ def generate_password(filename, salt, length=16):
     return password[:length]
 
 
-def get_cipher():
+def get_cipher() -> Optional[Fernet]:
     """
     獲取 Fernet 加密器實例
 
@@ -339,7 +346,7 @@ def get_cipher():
         return None
 
 
-def encrypt_password(password):
+def encrypt_password(password: str) -> Optional[str]:
     """
     加密密碼
 
@@ -365,7 +372,7 @@ def encrypt_password(password):
         return None
 
 
-def decrypt_password(encrypted_password):
+def decrypt_password(encrypted_password: str) -> Optional[str]:
     """
     解密密碼
 
@@ -392,7 +399,7 @@ def decrypt_password(encrypted_password):
         return None
 
 
-def regenerate_passwords_from_metadata(metadata, master_pass=None):
+def regenerate_passwords_from_metadata(metadata: Dict[str, Any], master_pass: Optional[str] = None) -> Optional[str]:
     """
     從元數據重新生成密碼文件內容
 
