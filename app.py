@@ -1208,22 +1208,337 @@ def compression_worker(task_id_str, recipient_email=None, host_url=None):
             if task_status and task_status.get('status') == '失敗':
                 _cleanup_files(generated_files)
 
-def decompression_worker(task_id_str):
-    task_id = ObjectId(task_id_str)
-    task = tasks_collection.find_one({'_id': task_id});
-    if not task: return
-    params = task['params']; original_file = params['original_file']
-    output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
-    # 追蹤已處理的中間檔案
-    processed_files = []
+# ============================================================================
+# 解壓縮輔助函數（Helper Functions for Decompression）
+# ============================================================================
+
+def _load_decompression_task(task_id_str: str) -> Optional[Tuple[ObjectId, Dict[str, Any], str, str, List[Dict[str, Optional[str]]], Optional[str]]]:
+    """加載解壓縮任務的數據和驗證密碼表。
+
+    從 MongoDB 讀取任務文檔，提取解壓縮所需的參數，驗證密碼表存在，
+    並準備臨時輸出目錄路徑。
+
+    Args:
+        task_id_str: 任務 ID 的字符串表示（24位十六進制）
+
+    Returns:
+        成功時返回包含以下元素的元組：
+            - task_id (ObjectId): 任務的 MongoDB ObjectId
+            - params (Dict[str, Any]): 任務參數字典
+            - original_file (str): 原始壓縮包的絕對路徑
+            - output_path (str): 臨時解壓目錄路徑
+            - password_list (List[Dict]): 密碼列表（每層的文件名和密碼）
+            - master_pass (Optional[str]): 主密碼（如果使用）
+
+        失敗時返回 None（任務不存在或密碼表缺失）
+
+    Raises:
+        ValueError: 密碼表不存在或為空
+
+    Example:
+        >>> task_data = _load_decompression_task("507f1f77bcf86cd799439011")
+        >>> if task_data:
+        >>>     task_id, params, file, output, passwords, master = task_data
+
+    Note:
+        - 密碼表必須按壓縮順序排列（外層到內層）
+        - output_path 格式：/tmp/compressor_outputs/{task_id}_decompress_temp
+    """
     try:
+        task_id = ObjectId(task_id_str)
+        task = tasks_collection.find_one({'_id': task_id})
+
+        if not task:
+            logging.warning(f"解壓任務 {task_id_str} 不存在")
+            return None
+
+        params = task['params']
+        original_file = params['original_file']
         password_list = params['password_list']
         master_pass = params.get('master_pass')
-        if not password_list: raise ValueError("找不到可用的密碼表。")
-        current_file = original_file; total_layers = len(password_list)
+
+        if not password_list:
+            raise ValueError("找不到可用的密碼表。")
+
+        output_path = os.path.join(OUTPUT_FOLDER, f"{task_id_str}_decompress_temp")
+
+        return (task_id, params, original_file, output_path, password_list, master_pass)
+
+    except Exception as e:
+        logging.error(f"加載解壓任務數據失敗: {e}", exc_info=True)
+        return None
+
+
+def _extract_archive_layer(
+    current_file: str,
+    output_path: str,
+    layer_info: Dict[str, Optional[str]],
+    password: Optional[str]
+) -> str:
+    """解壓單層壓縮包並移動提取的內容。
+
+    根據文件類型（ZIP/7Z 或 TAR）選擇合適的解壓方法，提取內容到臨時目錄，
+    然後安全地移動到輸出目錄（防止路徑穿越攻擊）。
+
+    Args:
+        current_file: 當前要解壓的壓縮包絕對路徑
+        output_path: 臨時解壓目錄路徑
+        layer_info: 層信息字典，包含 'filename' 鍵
+        password: 解壓密碼（None 表示無密碼）
+
+    Returns:
+        str: 解壓後文件/目錄的新路徑（在 OUTPUT_FOLDER 中）
+
+    Raises:
+        py7zr.Bad7zFile: 7Z 解壓失敗
+        tarfile.ReadError: TAR 解壓失敗
+        ValueError: 解壓後找不到文件
+        Exception: 檢測到路徑穿越攻擊
+
+    Example:
+        >>> next_file = _extract_archive_layer(
+        ...     "/tmp/layer3.zip",
+        ...     "/tmp/decompress_temp",
+        ...     {"filename": "layer3.zip"},
+        ...     "password123"
+        ... )
+        >>> print(next_file)  # /tmp/outputs/layer2.7z
+
+    Note:
+        - ZIP/7Z 使用 py7zr 並啟用多線程（mp=True）
+        - TAR 自動檢測壓縮格式（gz/bz2/xz）
+        - 使用 basename 和絕對路徑檢查防止路徑穿越
+        - 臨時目錄在移動後會被刪除
+    """
+    os.makedirs(output_path, exist_ok=True)
+
+    # 解壓到臨時目錄
+    if layer_info['filename'].endswith(('.zip', '.7z')):
+        with py7zr.SevenZipFile(current_file, 'r', password=password, mp=True) as z:
+            z.extractall(path=output_path)
+    else:
+        with tarfile.open(current_file, 'r:*') as tf:
+            tf.extractall(path=output_path)
+
+    # 獲取解壓內容
+    extracted_items = os.listdir(output_path)
+    if not extracted_items:
+        raise ValueError("解壓縮後找不到任何檔案。")
+
+    # 防止路徑穿越：使用 basename 清理檔案名稱
+    safe_item_name = os.path.basename(extracted_items[0])
+    source_path = os.path.join(output_path, extracted_items[0])
+    target_path = os.path.join(OUTPUT_FOLDER, safe_item_name)
+
+    # 確保目標路徑在 OUTPUT_FOLDER 內
+    if not os.path.abspath(target_path).startswith(os.path.abspath(OUTPUT_FOLDER)):
+        raise Exception("偵測到路徑穿越攻擊，已中止操作。")
+
+    # 移動文件並清理臨時目錄
+    shutil.move(source_path, target_path)
+    shutil.rmtree(output_path)
+
+    return target_path
+
+
+def _check_zip_bomb(total_size: int, current_layer_size: int) -> int:
+    """檢查解壓縮總大小，防止 Zip Bomb 攻擊。
+
+    累加每層解壓後的大小，如果超過預設上限（1GB），則拋出異常中止操作。
+    這是重要的安全防護措施，防止惡意壓縮包消耗系統資源。
+
+    Args:
+        total_size: 當前累計的解壓縮總大小（bytes）
+        current_layer_size: 當前層解壓後的大小（bytes）
+
+    Returns:
+        int: 新的累計總大小（total_size + current_layer_size）
+
+    Raises:
+        Exception: 累計大小超過 MAX_DECOMPRESS_SIZE_BYTES (1GB)
+
+    Example:
+        >>> total = 0
+        >>> total = _check_zip_bomb(total, 500_000_000)  # 500MB
+        >>> total = _check_zip_bomb(total, 600_000_000)  # Would raise Exception
+
+    Note:
+        - MAX_DECOMPRESS_SIZE_BYTES 常量定義為 1GB
+        - 每解壓一層都會檢查，不是只檢查最終結果
+        - 這防止了層層解壓的 Zip Bomb 攻擊
+    """
+    new_total = total_size + current_layer_size
+
+    if new_total > MAX_DECOMPRESS_SIZE_BYTES:
+        raise Exception(
+            f"解壓縮後的檔案總大小超過 1GB 上限，"
+            f"為防止 Zip Bomb 攻擊，已中止操作。"
+        )
+
+    return new_total
+
+
+def _finalize_decompression(
+    task_id: ObjectId,
+    current_file: str,
+    params: Dict[str, Any]
+) -> None:
+    """完成解壓縮任務的後處理（打包或保留、上傳、更新狀態）。
+
+    根據最終結果類型（目錄或文件）進行不同處理：
+    - 如果是目錄：打包成 ZIP 文件
+    - 如果是文件：保持原樣
+    然後上傳到 GridFS 並更新任務狀態為「完成」。
+
+    Args:
+        task_id: MongoDB 任務文檔的 ObjectId
+        current_file: 最終解壓結果的路徑（可能是目錄或文件）
+        params: 任務參數字典，包含 'expected_filename' 鍵
+
+    Side Effects:
+        - 創建 ZIP 文件（如果結果是目錄）
+        - 寫入 GridFS（上傳最終文件）
+        - 更新 MongoDB 任務狀態
+        - 更新任務日誌
+
+    Example:
+        >>> _finalize_decompression(
+        ...     ObjectId("507f1f77bcf86cd799439011"),
+        ...     "/tmp/outputs/decompressed_folder",
+        ...     {"expected_filename": "output.pdf"}
+        ... )
+        # Creates output.zip (if folder) or keeps output.pdf (if file)
+
+    Note:
+        - 目錄會被打包成 ZIP（使用 ZIP_DEFLATED 壓縮）
+        - 文件名從 expected_filename 獲取（來自原始壓縮任務）
+        - GridFS 自動處理大文件分塊存儲
+        - 最終文件會保留在 OUTPUT_FOLDER 直到後續清理
+    """
+    expected_filename = params.get('expected_filename', 'decompressed_output.zip')
+
+    if os.path.isdir(current_file):
+        # 目錄：打包成 ZIP
+        update_task_log(task_id, "日誌: 偵測到多個檔案，將打包成 ZIP 檔。")
+        final_zip_name_base = os.path.splitext(expected_filename)[0]
+        final_filename = f"{final_zip_name_base}.zip"
+        final_path = os.path.join(OUTPUT_FOLDER, final_filename)
+
+        with zipfile.ZipFile(final_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, _, files in os.walk(current_file):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, current_file)
+                    zipf.write(file_path, arcname)
+
+        file_to_upload = final_path
+    else:
+        # 單一文件：保持原樣
+        update_task_log(task_id, "日誌: 偵測到單一檔案，將保留原始檔名。")
+        final_filename = expected_filename
+        file_to_upload = current_file
+
+    # 上傳到 GridFS
+    with open(file_to_upload, 'rb') as f_in:
+        file_id = fs.put(f_in, filename=final_filename)
+
+    # 更新任務狀態
+    tasks_collection.update_one({'_id': task_id}, {'$set': {
+        'status': '完成',
+        'progress': 100,
+        'result_file_id': str(file_id),
+        'result_filename': final_filename,
+        'progress_text': '任務完成！'
+    }})
+
+    update_task_log(task_id, "✅ 解壓縮流程結束。")
+
+
+def _cleanup_decompression(
+    processed_files: List[str],
+    output_path: str
+) -> None:
+    """清理解壓縮過程中產生的臨時文件和目錄。
+
+    批量刪除解壓過程中生成的中間文件，以及臨時解壓目錄。
+    通常在任務失敗或取消時調用。
+
+    Args:
+        processed_files: 已處理的中間文件路徑列表
+        output_path: 臨時解壓目錄路徑
+
+    Side Effects:
+        - 刪除 processed_files 中的所有文件
+        - 刪除 output_path 目錄及其內容
+        - 寫入 INFO/ERROR 級別日誌
+
+    Example:
+        >>> processed = ["/tmp/outputs/layer1.7z", "/tmp/outputs/layer2.zip"]
+        >>> _cleanup_decompression(processed, "/tmp/decompress_temp")
+        # Deletes both files and the directory
+
+    Note:
+        - 文件不存在時靜默跳過
+        - 刪除失敗時記錄錯誤但不中斷流程
+        - 通常在 finally 塊中調用以確保資源釋放
+        - 與 _cleanup_files() 功能類似，但額外處理目錄
+    """
+    # 清理中間文件
+    for temp_file in processed_files:
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+                logging.info(f"已清理解壓中間檔案: {temp_file}")
+            except Exception as e:
+                logging.error(f"清理中間檔案失敗 {temp_file}: {e}")
+
+    # 清理臨時目錄
+    if os.path.exists(output_path):
+        try:
+            shutil.rmtree(output_path)
+            logging.info(f"已清理臨時解壓目錄: {output_path}")
+        except Exception as e:
+            logging.error(f"清理臨時目錄失敗: {e}")
+
+
+def decompression_worker(task_id_str: str) -> None:
+    """解壓縮工作進程（主函數）。
+
+    協調解壓縮流程，調用各輔助函數處理不同階段的任務。
+    支持多層解壓縮、密碼驗證、Zip Bomb 防護、進度追蹤。
+
+    Args:
+        task_id_str: 任務 ID 的字符串表示（24位十六進制）
+
+    Returns:
+        None
+
+    Raises:
+        無（所有異常均在內部捕獲並記錄到任務日誌）
+
+    Example:
+        >>> decompression_worker("507f1f77bcf86cd799439011")
+    """
+    processed_files: List[str] = []
+    output_path: Optional[str] = None
+    current_file: Optional[str] = None
+    original_file: Optional[str] = None
+    task_id: Optional[ObjectId] = None
+
+    try:
+        # 1. 加載任務數據和驗證密碼表
+        result = _load_decompression_task(task_id_str)
+        if not result:
+            return
+
+        task_id, params, original_file, output_path, password_list, master_pass = result
+        current_file = original_file
+        total_layers = len(password_list)
         total_uncompressed_size = 0
+
+        # 2. 逐層解壓縮（從外層到內層）
         for i, layer_info in enumerate(reversed(password_list)):
-            # 在每層開始前檢查取消狀態
+            # 檢查取消狀態
             task_status = safe_db_operation(
                 lambda: tasks_collection.find_one({'_id': task_id}, {'cancel_requested': 1}),
                 "檢查取消狀態"
@@ -1231,111 +1546,83 @@ def decompression_worker(task_id_str):
             if task_status and task_status.get('cancel_requested'):
                 update_task_log(task_id, "⚠️ 日誌: 操作已被使用者取消。")
                 safe_db_operation(
-                    lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '已取消', 'progress_text': '已取消'}}),
+                    lambda: tasks_collection.update_one(
+                        {'_id': task_id},
+                        {'$set': {'status': '已取消', 'progress_text': '已取消'}}
+                    ),
                     "設定取消狀態"
                 )
-                # 清理已處理的中間檔案
-                for temp_file in processed_files:
-                    if os.path.exists(temp_file):
-                        try:
-                            os.remove(temp_file)
-                            logging.info(f"已清理取消任務的中間檔案: {temp_file}")
-                        except Exception as e:
-                            logging.error(f"清理中間檔案失敗: {e}")
+                _cleanup_decompression(processed_files, output_path)
                 return
+
             layer_num = total_layers - i
             password = layer_info['password']
+
+            # 解析主密碼佔位符
             if password == 'MASTER_PASSWORD_PLACEHOLDER':
-                if not master_pass: raise ValueError(f"第 {layer_num} 層需要特殊密碼。")
+                if not master_pass:
+                    raise ValueError(f"第 {layer_num} 層需要特殊密碼。")
                 password = master_pass
-            
+
+            # 更新進度文本
             progress_text = f"正在解壓縮第 {layer_num}/{total_layers} 層"
             update_task_log(task_id, f"--- {progress_text} ---", is_progress_text=True)
-            
-            os.makedirs(output_path, exist_ok=True)
-            if layer_info['filename'].endswith(('.zip', '.7z')):
-                # py7zr 支持多線程解壓縮
-                with py7zr.SevenZipFile(current_file, 'r', password=password, mp=True) as z:
-                    z.extractall(path=output_path)
+
+            # 解壓單層並獲取解壓後的檔案路徑
+            current_file = _extract_archive_layer(current_file, output_path, layer_info, password)
+
+            # 計算當前層解壓後大小（用於 Zip Bomb 檢測）
+            if os.path.isdir(current_file):
+                current_layer_size = sum(
+                    os.path.getsize(os.path.join(root, name))
+                    for root, _, files in os.walk(current_file)
+                    for name in files
+                )
             else:
-                with tarfile.open(current_file, 'r:*') as tf:
-                    tf.extractall(path=output_path)
-            
-            current_layer_size = sum(os.path.getsize(os.path.join(root, name)) for root, _, files in os.walk(output_path) for name in files)
-            total_uncompressed_size += current_layer_size
-            if total_uncompressed_size > MAX_DECOMPRESS_SIZE_BYTES:
-                raise Exception(f"解壓縮後的檔案總大小超過 1GB 上限，為防止 Zip Bomb 攻擊，已中止操作。")
+                current_layer_size = os.path.getsize(current_file)
 
-            if current_file != original_file: os.remove(current_file)
-            extracted_items = os.listdir(output_path)
-            if not extracted_items: raise Exception("解壓縮後找不到任何檔案。")
+            # 檢查 Zip Bomb（累計大小檢測）
+            total_uncompressed_size = _check_zip_bomb(total_uncompressed_size, current_layer_size)
 
-            # 防止路徑穿越攻擊：使用 basename 清理檔案名稱
-            safe_item_name = os.path.basename(extracted_items[0])
-            next_item_path = os.path.join(output_path, extracted_items[0])
-            moved_item_path = os.path.join(OUTPUT_FOLDER, safe_item_name)
-
-            # 確保目標路徑在 OUTPUT_FOLDER 內
-            if not os.path.abspath(moved_item_path).startswith(os.path.abspath(OUTPUT_FOLDER)):
-                raise Exception("偵測到路徑穿越攻擊，已中止操作。")
-
-            shutil.move(next_item_path, moved_item_path)
-            shutil.rmtree(output_path)
-            current_file = moved_item_path
-            # 追蹤處理的中間檔案
+            # 追蹤處理的中間檔案（用於清理）
             if current_file != original_file:
                 processed_files.append(current_file)
+
+            # 更新進度百分比
             update_task_progress(task_id, int(((i + 1) / total_layers) * 100))
 
-        update_task_log(task_id, "日誌: 所有層級已解壓，正在檢查最終內容...", is_progress_text=True)
-        expected_filename = params.get('expected_filename', 'decompressed_output.zip')
-        
-        if os.path.isdir(current_file):
-            update_task_log(task_id, "日誌: 偵測到多個檔案，將打包成 ZIP 檔。")
-            final_zip_name_base = os.path.splitext(expected_filename)[0]
-            final_filename_to_store = f"{final_zip_name_base}.zip"
-            final_archive_path = os.path.join(OUTPUT_FOLDER, final_filename_to_store)
+        # 3. 完成解壓縮任務（打包、上傳、更新狀態）
+        _finalize_decompression(task_id, current_file, params)
 
-            with zipfile.ZipFile(final_archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, _, files in os.walk(current_file):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, current_file)
-                        zipf.write(file_path, arcname)
-            file_to_upload = final_archive_path
-        else:
-            update_task_log(task_id, "日誌: 偵測到單一檔案，將保留原始檔名。")
-            final_filename_to_store = expected_filename
-            file_to_upload = current_file
-
-        with open(file_to_upload, 'rb') as f_in:
-            file_id = fs.put(f_in, filename=final_filename_to_store)
-
-        tasks_collection.update_one({'_id': task_id}, {'$set': {
-            'status': '完成', 'progress': 100, 
-            'result_file_id': str(file_id), 'result_filename': final_filename_to_store,
-            'progress_text': '任務完成！'
-        }})
-        update_task_log(task_id, "✅ 解壓縮流程結束。")
     except (py7zr.Bad7zFile, zipfile.BadZipFile, tarfile.ReadError) as e:
         update_task_log(task_id, f"❌ 檔案格式錯誤或已損毀: {e}")
         safe_db_operation(
-            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            lambda: tasks_collection.update_one(
+                {'_id': task_id},
+                {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}
+            ),
             "設定任務失敗狀態"
         )
     except Exception as e:
         logging.error(f"解壓縮任務 {task_id_str} 失敗: {e}", exc_info=True)
         safe_db_operation(
-            lambda: tasks_collection.update_one({'_id': task_id}, {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}),
+            lambda: tasks_collection.update_one(
+                {'_id': task_id},
+                {'$set': {'status': '失敗', 'progress_text': '任務失敗'}}
+            ),
             "設定任務失敗狀態"
         )
     finally:
         # 清理原始上傳檔案
-        if 'original_file' in locals() and os.path.exists(original_file):
-            os.remove(original_file)
+        if original_file and os.path.exists(original_file):
+            try:
+                os.remove(original_file)
+                logging.info(f"已清理原始上傳檔案: {original_file}")
+            except Exception as e:
+                logging.error(f"清理原始檔案失敗: {e}")
 
         # 清理臨時解壓目錄
-        if 'output_path' in locals() and os.path.exists(output_path):
+        if output_path and os.path.exists(output_path):
             try:
                 shutil.rmtree(output_path)
                 logging.info(f"已清理臨時解壓目錄: {output_path}")
@@ -1343,27 +1630,22 @@ def decompression_worker(task_id_str):
                 logging.error(f"清理臨時目錄失敗: {e}")
 
         # 如果任務失敗，清理所有中間檔案
-        task_status = safe_db_operation(
-            lambda: tasks_collection.find_one({'_id': task_id}, {'status': 1}),
-            "查詢任務狀態"
-        )
-        if task_status and task_status.get('status') == '失敗':
-            if 'current_file' in locals() and os.path.exists(current_file):
-                try:
-                    if os.path.isdir(current_file):
-                        shutil.rmtree(current_file)
-                    else:
-                        os.remove(current_file)
-                    logging.info(f"已清理失敗任務的檔案: {current_file}")
-                except Exception as e:
-                    logging.error(f"清理檔案失敗: {e}")
-
-            if 'final_archive_path' in locals() and os.path.exists(final_archive_path):
-                try:
-                    os.remove(final_archive_path)
-                    logging.info(f"已清理失敗任務的歸檔: {final_archive_path}")
-                except Exception as e:
-                    logging.error(f"清理歸檔失敗: {e}")
+        if task_id:
+            task_status = safe_db_operation(
+                lambda: tasks_collection.find_one({'_id': task_id}, {'status': 1}),
+                "查詢任務狀態"
+            )
+            if task_status and task_status.get('status') == '失敗':
+                for temp_file in processed_files:
+                    if os.path.exists(temp_file):
+                        try:
+                            if os.path.isdir(temp_file):
+                                shutil.rmtree(temp_file)
+                            else:
+                                os.remove(temp_file)
+                            logging.info(f"已清理失敗任務的檔案: {temp_file}")
+                        except Exception as e:
+                            logging.error(f"清理檔案失敗: {e}")
 
 def send_completion_email(recipient_email, task_id, original_filename, host_url):
     if not MAIL_USERNAME or not MAIL_PASSWORD: raise Exception("伺服器未設定郵件功能。")
