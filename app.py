@@ -724,15 +724,32 @@ def task_wrapper(func, *args, **kwargs):
 # ============================================================================
 
 def _load_task_data(task_id_str: str) -> Optional[Tuple[ObjectId, Dict[str, Any], Dict[str, Any], str, int]]:
-    """
-    加載任務數據和原始文件信息
+    """加載壓縮任務的數據和原始文件信息。
 
-    參數:
-        task_id_str: 任務 ID 字符串
+    從 MongoDB 讀取任務文檔，驗證原始文件存在性，並計算文件大小。
+    這是壓縮工作流程的第一步，用於準備後續的壓縮操作。
 
-    返回:
-        成功: (task_id, task, params, original_file, original_size)
-        失敗: None
+    Args:
+        task_id_str: 任務 ID 的字符串表示（24位十六進制）。
+
+    Returns:
+        成功時返回包含以下元素的元組：
+            - task_id (ObjectId): 任務的 MongoDB ObjectId
+            - task (Dict[str, Any]): 完整的任務文檔
+            - params (Dict[str, Any]): 任務參數字典
+            - original_file (str): 原始文件的絕對路徑
+            - original_size (int): 原始文件大小（bytes）
+
+        失敗時返回 None（任務不存在或文件不存在）。
+
+    Example:
+        >>> task_data = _load_task_data("507f1f77bcf86cd799439011")
+        >>> if task_data:
+        >>>     task_id, task, params, file_path, size = task_data
+        >>>     print(f"File: {file_path}, Size: {size} bytes")
+
+    Note:
+        此函數會記錄警告和錯誤日誌，便於調試。
     """
     try:
         task_id = ObjectId(task_id_str)
@@ -759,14 +776,36 @@ def _load_task_data(task_id_str: str) -> Optional[Tuple[ObjectId, Dict[str, Any]
 
 
 def _initialize_compression(params: Dict[str, Any]) -> Tuple[str, Dict[str, Any], set]:
-    """
-    初始化壓縮參數（鹽值、元數據結構、加密層計算）
+    """初始化壓縮任務的參數和元數據結構。
 
-    參數:
-        params: 任務參數字典
+    生成任務專用的密碼鹽值，初始化密碼元數據結構（用於儲存層級密碼信息），
+    並根據加密模式計算需要加密的層數集合。
 
-    返回:
-        (task_salt, password_metadata, encrypt_layers)
+    Args:
+        params: 任務參數字典，包含以下鍵：
+            - encrypt_mode (str): 加密模式（'none', 'all', 'odd', 'even', 'multiple', 'arithmetic', 'manual'）
+            - iterations (int): 壓縮層數
+            - manual_layers (List[int], optional): 手動指定的加密層（僅 manual 模式）
+            - multiple_interval (int, optional): 倍數間隔（multiple 模式，默認 3）
+            - arithmetic_start (int, optional): 等差數列首項（arithmetic 模式，默認 1）
+            - arithmetic_diff (int, optional): 等差數列公差（arithmetic 模式，默認 2）
+
+    Returns:
+        包含以下元素的元組：
+            - task_salt (str): 16 bytes 的十六進制鹽值（32 個字符）
+            - password_metadata (Dict[str, Any]): 密碼元數據結構，包含：
+                - task_salt: 任務鹽值
+                - layers: 空列表（將在壓縮過程中填充）
+            - encrypt_layers (set): 需要加密的層數集合（例如 {1, 3, 5}）
+
+    Example:
+        >>> params = {'encrypt_mode': 'odd', 'iterations': 5}
+        >>> salt, metadata, layers = _initialize_compression(params)
+        >>> print(f"Encrypt layers: {sorted(layers)}")  # [1, 3, 5]
+
+    Note:
+        - 鹽值用於生成確定性密碼（基於文件名 + 鹽值的 SHA-256）
+        - 每個任務的鹽值都是唯一的，確保密碼安全性
     """
     # 生成任務鹽值
     task_salt = secrets.token_hex(TASK_SALT_BYTES)
@@ -800,19 +839,44 @@ def _generate_layer_password(
     task_salt: str,
     format_name: str
 ) -> Tuple[Optional[str], bool, bool, int]:
-    """
-    生成層密碼（根據加密模式和配置）
+    """生成指定層的加密密碼（基於加密模式和配置）。
 
-    參數:
-        layer_num: 當前層數
-        params: 任務參數
-        encrypt_layers: 需要加密的層集合
-        filename_for_password: 用於生成密碼的文件名
-        task_salt: 任務鹽值
-        format_name: 壓縮格式名稱
+    根據加密模式、主密碼設置和壓縮格式，決定當前層是否需要密碼以及密碼內容。
+    支持主密碼（固定間隔）和自動生成密碼（基於 SHA-256）兩種方式。
 
-    返回:
-        (password, has_password, is_master, pwd_length)
+    Args:
+        layer_num: 當前層數（1-based，例如第 1 層為 layer_num=1）
+        params: 任務參數字典，包含：
+            - use_master_pass (bool): 是否使用主密碼
+            - master_pass (str, optional): 主密碼內容
+            - master_pass_interval (int, optional): 主密碼間隔（每隔 N 層使用主密碼）
+            - use_custom_length (bool, optional): 是否使用自定義密碼長度
+            - password_length_config (Dict[int, int], optional): 各層的密碼長度配置
+            - default_password_length (int, optional): 默認密碼長度
+        encrypt_layers: 需要加密的層數集合（由 calculate_encrypt_layers 生成）
+        filename_for_password: 用於生成密碼的文件名（最終層或隨機文件名）
+        task_salt: 任務專用的密碼鹽值（16 bytes 十六進制）
+        format_name: 壓縮格式名稱 ('zip', '7z', 'targz')
+
+    Returns:
+        包含以下元素的元組：
+            - password (Optional[str]): 密碼（None 表示無密碼）
+            - has_password (bool): 是否有密碼
+            - is_master (bool): 是否為主密碼
+            - pwd_length (int): 密碼長度（僅當 has_password=True 時有意義）
+
+    Example:
+        >>> params = {'use_master_pass': False}
+        >>> encrypt_layers = {1, 3, 5}
+        >>> pwd, has_pwd, is_master, length = _generate_layer_password(
+        ...     3, params, encrypt_layers, "file.zip", "abc123", "zip"
+        ... )
+        >>> print(f"Password: {pwd}, Length: {length}")  # Generated SHA-256 password
+
+    Note:
+        - TAR.GZ 格式不支持密碼加密，即使在加密層中也會返回 has_password=False
+        - 主密碼優先級高於加密層配置
+        - 生成的密碼基於 filename + salt 的 SHA-256，確保確定性和安全性
     """
     password = None
     has_password = False
@@ -850,14 +914,38 @@ def _process_compression_layer(
     format_name: str,
     password: Optional[str]
 ) -> None:
-    """
-    處理單層壓縮邏輯
+    """執行單層壓縮操作。
 
-    參數:
-        current_file: 當前要壓縮的文件路徑
-        output_filename: 輸出文件路徑
-        format_name: 壓縮格式名稱 ('zip', '7z', 'targz')
-        password: 加密密碼（None 表示不加密）
+    使用指定的壓縮格式將當前文件壓縮為新的壓縮包。支持 ZIP/7Z（含密碼）和 TAR.GZ 格式。
+    ZIP/7Z 使用 py7zr 庫並啟用多線程壓縮以提高性能。
+
+    Args:
+        current_file: 要壓縮的文件絕對路徑（可能是原始文件或上一層的壓縮包）
+        output_filename: 輸出壓縮包的絕對路徑（在 OUTPUT_FOLDER 中）
+        format_name: 壓縮格式名稱，必須是以下之一：
+            - 'zip': ZIP 格式（支持密碼）
+            - '7z': 7-Zip 格式（支持密碼）
+            - 'targz': TAR + GZIP 格式（不支持密碼）
+        password: 加密密碼（僅適用於 ZIP/7Z 格式，None 表示不加密）
+
+    Raises:
+        py7zr.Bad7zFile: 7Z 壓縮失敗
+        tarfile.ReadError: TAR 壓縮失敗
+        IOError: 文件讀寫錯誤
+
+    Example:
+        >>> _process_compression_layer(
+        ...     "/tmp/uploads/input.pdf",
+        ...     "/tmp/outputs/output.zip",
+        ...     "zip",
+        ...     "secret123"
+        ... )
+        # Creates /tmp/outputs/output.zip containing input.pdf (encrypted)
+
+    Note:
+        - py7zr 的 mp=True 參數啟用多線程壓縮，顯著提高大文件壓縮速度
+        - TAR.GZ 使用 compresslevel=6 平衡壓縮率和速度（範圍 1-9）
+        - 函數不會自動刪除 current_file，調用者需負責清理
     """
     if format_name in ('zip', '7z'):
         # py7zr 支持多線程壓縮
@@ -879,18 +967,50 @@ def _finalize_compression(
     task_id_str: str,
     raw_filename: str
 ) -> None:
-    """
-    完成壓縮任務（上傳文件、更新狀態、發送郵件）
+    """完成壓縮任務的後處理（計算壓縮率、上傳、更新狀態、發送郵件）。
 
-    參數:
-        task_id: 任務 ObjectId
-        current_file: 最終壓縮文件路徑
-        original_size: 原始文件大小（bytes）
-        password_metadata: 密碼元數據字典
-        recipient_email: 收件人郵箱（可選）
-        host_url: 主機 URL（可選）
-        task_id_str: 任務 ID 字符串
-        raw_filename: 原始文件名
+    壓縮流程的最後階段，負責：
+    1. 計算並記錄壓縮率統計信息
+    2. 將最終壓縮包上傳到 MongoDB GridFS
+    3. 刪除本地臨時文件
+    4. 生成安全的刪除令牌
+    5. 更新 MongoDB 任務狀態為「完成」
+    6. 發送郵件通知（如果用戶提供郵箱）
+
+    Args:
+        task_id: MongoDB 任務文檔的 ObjectId
+        current_file: 最終壓縮包的絕對路徑（在 OUTPUT_FOLDER 中）
+        original_size: 原始文件大小（bytes），用於計算壓縮率
+        password_metadata: 密碼元數據字典，包含 task_salt 和 layers 信息
+        recipient_email: 收件人郵箱地址（None 表示不發送郵件）
+        host_url: 應用程序的主機 URL（用於郵件中的下載鏈接）
+        task_id_str: 任務 ID 的字符串表示（24 位十六進制）
+        raw_filename: 用戶上傳的原始文件名（用於郵件主題）
+
+    Side Effects:
+        - 寫入 MongoDB（更新任務狀態）
+        - 寫入 GridFS（上傳壓縮包）
+        - 刪除本地臨時文件
+        - 發送 SMTP 郵件（如果提供郵箱）
+        - 更新任務日誌（多次調用 update_task_log）
+
+    Example:
+        >>> _finalize_compression(
+        ...     ObjectId("507f1f77bcf86cd799439011"),
+        ...     "/tmp/outputs/final.zip",
+        ...     1024000,  # 1MB
+        ...     {"task_salt": "abc123", "layers": []},
+        ...     "user@example.com",
+        ...     "https://app.example.com",
+        ...     "507f1f77bcf86cd799439011",
+        ...     "document.pdf"
+        ... )
+        # Uploads file, updates DB, sends email, cleans up local file
+
+    Note:
+        - 郵件發送失敗不會中斷流程，只記錄警告日誌
+        - delete_token 用於後續安全刪除文件，使用 16 bytes 隨機值
+        - GridFS 自動處理大文件分塊存儲（默認 255KB 一個 chunk）
     """
     # 計算壓縮率
     final_size = os.path.getsize(current_file)
@@ -930,11 +1050,28 @@ def _finalize_compression(
 
 
 def _cleanup_files(files_to_clean: List[str]) -> None:
-    """
-    清理臨時文件
+    """清理臨時文件列表。
 
-    參數:
-        files_to_clean: 要清理的文件路徑列表
+    批量刪除指定的臨時文件，用於壓縮失敗或任務取消時的資源清理。
+    函數會安全處理文件不存在的情況，並記錄所有操作日誌。
+
+    Args:
+        files_to_clean: 要刪除的文件絕對路徑列表（通常是壓縮過程中生成的中間文件）
+
+    Side Effects:
+        - 刪除存在的文件
+        - 寫入 INFO/ERROR 級別日誌
+
+    Example:
+        >>> generated_files = ["/tmp/outputs/layer1.zip", "/tmp/outputs/layer2.7z"]
+        >>> _cleanup_files(generated_files)
+        # Logs: "已清理文件: /tmp/outputs/layer1.zip"
+        # Logs: "已清理文件: /tmp/outputs/layer2.7z"
+
+    Note:
+        - 文件不存在時靜默跳過（不會拋出異常）
+        - 刪除失敗時記錄錯誤但不中斷流程
+        - 通常在 finally 塊中調用以確保資源釋放
     """
     for temp_file in files_to_clean:
         if os.path.exists(temp_file):
