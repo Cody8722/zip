@@ -452,7 +452,7 @@ def regenerate_passwords_from_metadata(metadata: Dict[str, Any], master_pass: Op
 
     return content
 
-def safe_db_operation(operation_func, operation_name="資料庫操作"):
+def safe_db_operation(operation_func, operation_name: str = "資料庫操作") -> Any:
     """
     安全執行資料庫操作的包裝函數
     Args:
@@ -467,7 +467,7 @@ def safe_db_operation(operation_func, operation_name="資料庫操作"):
         logging.error(f"{operation_name}失敗: {e}", exc_info=True)
         return None
 
-def update_task_log(task_id, message, is_progress_text=False):
+def update_task_log(task_id: ObjectId, message: str, is_progress_text: bool = False) -> None:
     def _update():
         update_doc = {'$push': {'logs': message}}
         if is_progress_text:
@@ -487,7 +487,7 @@ def update_task_log(task_id, message, is_progress_text=False):
         return result
     safe_db_operation(_update, f"更新任務日誌 ({task_id})")
 
-def update_task_progress(task_id, progress):
+def update_task_progress(task_id: ObjectId, progress: int) -> None:
     def _update():
         result = tasks_collection.update_one({'_id': task_id}, {'$set': {'progress': progress}})
         # 更新快取中的進度
@@ -501,7 +501,7 @@ def update_task_progress(task_id, progress):
     safe_db_operation(_update, f"更新任務進度 ({task_id})")
 
 
-def get_cached_task(task_id):
+def get_cached_task(task_id: ObjectId) -> Optional[Dict[str, Any]]:
     """
     從快取獲取任務狀態（如果啟用 Redis）
 
@@ -535,7 +535,7 @@ def get_cached_task(task_id):
     return None
 
 
-def cache_task(task_id, task_data):
+def cache_task(task_id: ObjectId, task_data: Dict[str, Any]) -> None:
     """
     將任務狀態存入快取
 
@@ -566,7 +566,7 @@ def cache_task(task_id, task_data):
         logging.warning(f"⚠️ 寫入快取失敗: {e}")
 
 
-def invalidate_task_cache(task_id):
+def invalidate_task_cache(task_id: ObjectId) -> None:
     """
     清除任務快取
 
@@ -583,7 +583,7 @@ def invalidate_task_cache(task_id):
         logging.warning(f"⚠️ 清除快取失敗: {e}")
 
 
-def parse_password_text(password_text):
+def parse_password_text(password_text: str) -> List[Dict[str, Optional[str]]]:
     password_list = []
     for line in password_text.strip().split('\n'):
         match = re.search(r'第 \d+ 層 \((.*?)\):\s*(.*)', line)
@@ -596,7 +596,7 @@ def parse_password_text(password_text):
                 password_list.append({'filename': fname.strip(), 'password': None if password == '(無密碼)' else password})
     return password_list
 
-def validate_compression_params(params):
+def validate_compression_params(params: Dict[str, Any]) -> None:
     """
     驗證壓縮參數的合法性
     Raises:
@@ -651,7 +651,7 @@ def validate_compression_params(params):
     if not params.get('formats') or len(params['formats']) == 0:
         raise ValueError("至少需要選擇一種壓縮格式。")
 
-def validate_file(file, mode='compress'):
+def validate_file(file, mode: str = 'compress') -> None:
     if not file or not file.filename:
         raise ValueError("沒有選擇檔案或檔案名稱不可為空。")
     file.seek(0, os.SEEK_END)
