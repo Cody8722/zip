@@ -10,6 +10,7 @@ import base64
 import atexit
 import signal
 from flask import Flask, request, jsonify, render_template, send_file
+from flask_wtf.csrf import CSRFProtect, generate_csrf, CSRFError
 from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime
@@ -31,7 +32,16 @@ from typing import Optional, Dict, Any, Tuple, List
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # 禁用靜態文件緩存以減少記憶體佔用
+
+# --- CSRF 保護設定 ---
+# 優先使用環境變數中的 SECRET_KEY，否則生成隨機密鑰（開發環境）
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF token 不過期（適用於長時間操作）
+app.config['WTF_CSRF_SSL_STRICT'] = False  # 允許 HTTP（生產環境應設為 True）
+csrf = CSRFProtect(app)
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.info("✅ CSRF 保護已啟用")
 
 # --- 設定 ---
 UPLOAD_FOLDER = '/tmp/compressor_uploads'
@@ -1246,12 +1256,35 @@ def set_security_headers(response):
     # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
+# --- CSRF 錯誤處理 ---
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    """處理 CSRF 驗證失敗"""
+    logging.warning(f"CSRF 驗證失敗: {e.description} - IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
+    return jsonify({
+        'error': 'CSRF 驗證失敗',
+        'message': 'CSRF token 缺失或無效，請刷新頁面後重試。'
+    }), 403
+
 # --- API 路由 ---
 def handle_route_exception(e, endpoint_name):
     logging.error(f"路由 {endpoint_name} 發生錯誤: {e}", exc_info=True)
     if isinstance(e, ValueError):
         return jsonify({'error': str(e)}), 400
     return jsonify({'error': '伺服器內部發生錯誤，請稍後再試。'}), 500
+
+@app.route('/api/csrf-token', methods=['GET'])
+@csrf.exempt  # 此端點本身不需要 CSRF 保護（用於獲取 token）
+def get_csrf_token():
+    """
+    獲取 CSRF token
+
+    Returns:
+        JSON: {'csrf_token': 'token_value'}
+    """
+    token = generate_csrf()
+    logging.info(f"生成 CSRF token - IP: {request.headers.get('X-Forwarded-For', request.remote_addr)}")
+    return jsonify({'csrf_token': token})
 
 @app.route('/')
 def index():

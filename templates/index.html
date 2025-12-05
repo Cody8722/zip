@@ -1097,6 +1097,44 @@
     </div>
     
     <script>
+        // ======= CSRF Token 管理 =======
+        let csrfToken = null;
+
+        /**
+         * 獲取 CSRF token 並存儲
+         */
+        async function fetchCSRFToken() {
+            try {
+                const response = await fetch('/api/csrf-token');
+                if (!response.ok) {
+                    throw new Error('無法獲取 CSRF token');
+                }
+                const data = await response.json();
+                csrfToken = data.csrf_token;
+                writeDebugLog(`✅ CSRF token 已獲取`);
+                return csrfToken;
+            } catch (error) {
+                console.error('獲取 CSRF token 失敗:', error);
+                Toast.error('安全驗證失敗，請刷新頁面');
+                return null;
+            }
+        }
+
+        /**
+         * 添加 CSRF token 到 fetch headers
+         * @param {Object} headers - 現有的 headers
+         * @returns {Object} - 包含 CSRF token 的 headers
+         */
+        function addCSRFHeader(headers = {}) {
+            if (csrfToken) {
+                headers['X-CSRFToken'] = csrfToken;
+            }
+            return headers;
+        }
+
+        // 頁面加載時獲取 CSRF token
+        document.addEventListener('DOMContentLoaded', fetchCSRFToken);
+
         // ======= Toast 通知系統 =======
         const Toast = {
             container: null,
@@ -1546,6 +1584,13 @@
                     const xhr = new XMLHttpRequest();
                     currentXHR = xhr;  // 保存 XHR 對象以便取消
                     xhr.open('POST', endpoint, true);
+
+                    // 添加 CSRF token 到請求頭
+                    if (csrfToken) {
+                        xhr.setRequestHeader('X-CSRFToken', csrfToken);
+                        writeDebugLog(`XHR: 已添加 CSRF token`);
+                    }
+
                     writeDebugLog(`XHR: POST ${endpoint}`);
 
                     let uploadStartTime = Date.now();
@@ -1978,7 +2023,7 @@
                     try {
                         const response = await fetch(`/delete/${taskId}`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: addCSRFHeader({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({ token: token })
                         });
                         const data = await response.json();
@@ -2272,7 +2317,7 @@
                     if (confirmed) {
                         const tasksToDelete = history.map(item => ({ id: item.id, token: item.token }));
                         try {
-                            const response = await fetch('/delete-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tasks: tasksToDelete }) });
+                            const response = await fetch('/delete-batch', { method: 'POST', headers: addCSRFHeader({ 'Content-Type': 'application/json' }), body: JSON.stringify({ tasks: tasksToDelete }) });
                             const result = await response.json();
                             if (!response.ok) throw new Error(result.error || '伺服器發生錯誤');
                             localStorage.removeItem('compressHistory');
@@ -2301,7 +2346,7 @@
                     elements.adminSecretModal.classList.remove('visible');
                     elements.adminSecretInput.value = '';
                     try {
-                        const response = await fetch('/delete-all-files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ admin_secret: adminSecret }) });
+                        const response = await fetch('/delete-all-files', { method: 'POST', headers: addCSRFHeader({ 'Content-Type': 'application/json' }), body: JSON.stringify({ admin_secret: adminSecret }) });
                         const result = await response.json();
                         if (!response.ok) throw new Error(result.error || '伺服器發生錯誤');
                         localStorage.removeItem('compressHistory');
@@ -2360,7 +2405,7 @@
                                     writeDebugLog('已停止狀態輪詢');
                                 }
 
-                                const response = await fetch(`/cancel/${currentTaskId}`, { method: 'POST' });
+                                const response = await fetch(`/cancel/${currentTaskId}`, { method: 'POST', headers: addCSRFHeader({}) });
                                 if (!response.ok) {
                                     throw new Error('取消請求失敗');
                                 }
