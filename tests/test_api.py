@@ -23,6 +23,23 @@ def client():
         yield client
 
 
+@pytest.fixture
+def csrf_token(client):
+    """获取有效的 CSRF token"""
+    response = client.get('/api/csrf-token')
+    if response.status_code == 200:
+        return response.get_json().get('csrf_token')
+    return None
+
+
+@pytest.fixture
+def csrf_headers(csrf_token):
+    """创建包含 CSRF token 的请求头"""
+    if csrf_token:
+        return {'X-CSRFToken': csrf_token}
+    return {}
+
+
 class TestHealthCheck:
     """健康检查端点测试"""
 
@@ -36,25 +53,25 @@ class TestHealthCheck:
     def test_task_status_endpoint_invalid_id(self, client):
         """测试任务状态端点（无效ID）"""
         response = client.get('/status/invalid_task_id')
-        # 应该返回 404 (任务不存在) 或 500 (错误)
-        assert response.status_code in [404, 500]
+        # 应该返回 400 (无效ObjectId), 404 (任务不存在) 或 500 (错误)
+        assert response.status_code in [400, 404, 500]
 
 
 class TestCompressionAPI:
     """压缩 API 测试"""
 
-    def test_compress_endpoint_exists(self, client):
+    def test_compress_endpoint_exists(self, client, csrf_headers):
         """测试 /compress 端点存在"""
-        response = client.post('/compress')
+        response = client.post('/compress', headers=csrf_headers)
         # 应该返回 400（缺少文件）或 500
         assert response.status_code in [400, 429, 500]
 
-    def test_compress_without_file(self, client):
+    def test_compress_without_file(self, client, csrf_headers):
         """测试压缩时缺少文件"""
-        response = client.post('/compress')
+        response = client.post('/compress', headers=csrf_headers)
         assert response.status_code in [400, 429, 500]
 
-    def test_compress_with_invalid_file(self, client):
+    def test_compress_with_invalid_file(self, client, csrf_headers):
         """测试压缩无效文件"""
         data = {
             'file': (BytesIO(b'test content'), 'test.txt'),
@@ -62,11 +79,12 @@ class TestCompressionAPI:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 可能拒绝或接受（取决于文件类型限制）
         assert response.status_code in [200, 201, 400, 429, 500]
 
-    def test_compress_with_valid_zip(self, client):
+    def test_compress_with_valid_zip(self, client, csrf_headers):
         """测试压缩 ZIP 文件"""
         # 创建一个简单的 ZIP 文件内容（模拟）
         data = {
@@ -76,10 +94,11 @@ class TestCompressionAPI:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [200, 201, 400, 429, 500]
 
-    def test_compress_with_iterations(self, client):
+    def test_compress_with_iterations(self, client, csrf_headers):
         """测试多层压缩"""
         data = {
             'file': (BytesIO(b'test' * 100), 'test.dat'),
@@ -89,6 +108,7 @@ class TestCompressionAPI:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [200, 201, 400, 429, 500]
 
@@ -96,22 +116,23 @@ class TestCompressionAPI:
 class TestDecompressionAPI:
     """解压缩 API 测试"""
 
-    def test_decompress_manual_endpoint(self, client):
+    def test_decompress_manual_endpoint(self, client, csrf_headers):
         """测试手动解压端点"""
-        response = client.post('/decompress-manual')
+        response = client.post('/decompress-manual', headers=csrf_headers)
         assert response.status_code in [400, 429, 500]
 
-    def test_decompress_without_file(self, client):
+    def test_decompress_without_file(self, client, csrf_headers):
         """测试解压时缺少文件"""
         data = {
             'passwords': ''
         }
         response = client.post('/decompress-manual',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [400, 429, 500]
 
-    def test_decompress_with_invalid_file(self, client):
+    def test_decompress_with_invalid_file(self, client, csrf_headers):
         """测试解压无效文件"""
         data = {
             'file': (BytesIO(b'not a zip'), 'test.txt'),
@@ -119,10 +140,11 @@ class TestDecompressionAPI:
         }
         response = client.post('/decompress-manual',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [400, 429, 500]
 
-    def test_decompress_with_password_list(self, client):
+    def test_decompress_with_password_list(self, client, csrf_headers):
         """测试解压带密码列表"""
         passwords = """第 1 層 (file.zip): password1
 第 2 層 (file.7z): password2
@@ -133,6 +155,7 @@ class TestDecompressionAPI:
         }
         response = client.post('/decompress-manual',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [200, 201, 400, 429, 500]
 
@@ -162,18 +185,20 @@ class TestFileDownload:
     def test_download_result_invalid_id(self, client):
         """测试下载不存在的结果文件"""
         response = client.get('/download/invalid_file_id_789')
-        assert response.status_code in [404, 500]
+        # 应该返回 400 (无效ObjectId), 404 (文件不存在) 或 500 (错误)
+        assert response.status_code in [400, 404, 500]
 
     def test_download_password_file_invalid_id(self, client):
         """测试下载不存在的密码文件"""
         response = client.get('/download-password/invalid_task_id_012')
-        assert response.status_code in [404, 500]
+        # 应该返回 400 (无效ObjectId), 404 (任务不存在) 或 500 (错误)
+        assert response.status_code in [400, 404, 500]
 
 
 class TestInputValidation:
     """输入验证测试"""
 
-    def test_file_size_limit(self, client):
+    def test_file_size_limit(self, client, csrf_headers):
         """测试文件大小限制"""
         # 创建一个小文件测试（实际限制在环境变量中）
         large_content = b'x' * (1024 * 1024)  # 1MB
@@ -183,11 +208,12 @@ class TestInputValidation:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 应该能处理 1MB 文件
         assert response.status_code in [200, 201, 400, 413, 429, 500]
 
-    def test_iterations_validation_negative(self, client):
+    def test_iterations_validation_negative(self, client, csrf_headers):
         """测试负数迭代次数"""
         data = {
             'file': (BytesIO(b'test'), 'test.zip'),
@@ -195,11 +221,12 @@ class TestInputValidation:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 应该拒绝负数
         assert response.status_code in [400, 429, 500]
 
-    def test_iterations_validation_zero(self, client):
+    def test_iterations_validation_zero(self, client, csrf_headers):
         """测试零迭代次数"""
         data = {
             'file': (BytesIO(b'test'), 'test.zip'),
@@ -207,10 +234,11 @@ class TestInputValidation:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         assert response.status_code in [400, 429, 500]
 
-    def test_iterations_validation_very_large(self, client):
+    def test_iterations_validation_very_large(self, client, csrf_headers):
         """测试过大的迭代次数"""
         data = {
             'file': (BytesIO(b'test'), 'test.zip'),
@@ -218,11 +246,12 @@ class TestInputValidation:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 取决于是否有上限验证
         assert response.status_code in [200, 201, 400, 429, 500]
 
-    def test_malicious_filename(self, client):
+    def test_malicious_filename(self, client, csrf_headers):
         """测试恶意文件名（路径穿越）"""
         data = {
             'file': (BytesIO(b'test'), '../../../etc/passwd'),
@@ -230,6 +259,7 @@ class TestInputValidation:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 应该被安全处理（secure_filename）
         assert response.status_code in [200, 201, 400, 429, 500]
@@ -238,7 +268,7 @@ class TestInputValidation:
 class TestSecurityFeatures:
     """安全功能测试"""
 
-    def test_file_magic_number_validation_zip(self, client):
+    def test_file_magic_number_validation_zip(self, client, csrf_headers):
         """测试 ZIP 文件魔数验证"""
         # 正确的 ZIP 魔数
         valid_zip = b'PK\x03\x04' + b'\x00' * 50
@@ -248,11 +278,12 @@ class TestSecurityFeatures:
         }
         response = client.post('/decompress-manual',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 应该通过魔数验证
         assert response.status_code in [200, 201, 400, 429, 500]
 
-    def test_file_magic_number_validation_fake_zip(self, client):
+    def test_file_magic_number_validation_fake_zip(self, client, csrf_headers):
         """测试伪造的 ZIP 文件"""
         # 错误的魔数但文件名是 .zip
         fake_zip = b'FAKE' + b'\x00' * 50
@@ -262,6 +293,7 @@ class TestSecurityFeatures:
         }
         response = client.post('/decompress-manual',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 应该被拒绝（魔数不匹配）
         assert response.status_code in [400, 429, 500]
@@ -280,7 +312,7 @@ class TestRateLimiting:
 class TestEmailNotification:
     """邮件通知测试（如果启用）"""
 
-    def test_compress_with_email(self, client):
+    def test_compress_with_email(self, client, csrf_headers):
         """测试带邮件通知的压缩"""
         data = {
             'file': (BytesIO(b'test' * 100), 'test.dat'),
@@ -289,6 +321,7 @@ class TestEmailNotification:
         }
         response = client.post('/compress',
                               data=data,
+                              headers=csrf_headers,
                               content_type='multipart/form-data')
         # 邮件发送可能失败，但请求应该被接受
         assert response.status_code in [200, 201, 400, 429, 500]

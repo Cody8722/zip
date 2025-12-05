@@ -20,6 +20,29 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 # ============================================================================
+# Fixtures for CSRF Token Support
+# ============================================================================
+
+@pytest.fixture
+def csrf_token():
+    """獲取有效的 CSRF token"""
+    from app import app
+    with app.test_client() as client:
+        response = client.get('/api/csrf-token')
+        if response.status_code == 200:
+            return response.get_json().get('csrf_token')
+    return None
+
+
+@pytest.fixture
+def csrf_headers(csrf_token):
+    """創建包含 CSRF token 的請求頭"""
+    if csrf_token:
+        return {'X-CSRFToken': csrf_token}
+    return {}
+
+
+# ============================================================================
 # 防護測試 #1: 管理員認證流程
 # 目的：鎖定當前的 query parameter 認證方式（即使不安全）
 # ============================================================================
@@ -32,6 +55,7 @@ class TestAdminAuthenticationGuard:
         快照：當前管理員密碼通過 query parameter 傳遞
 
         ⚠️ 已知問題：明文傳輸，會被記錄在 logs
+        ⚠️ 已知問題：admin.html 模板缺失會導致 500 錯誤
         目的：確保重構後認證邏輯仍然正確
         """
         from app import app
@@ -39,11 +63,12 @@ class TestAdminAuthenticationGuard:
         with app.test_client() as client:
             # 測試沒有密碼的情況
             response = client.get('/admin')
+            # 可能因為缺少 admin.html 模板而返回 500
             assert response.status_code in [200, 401, 403, 500]
 
             # 測試錯誤密碼的情況
             response = client.get('/admin?secret=wrong_password')
-            # 當前行為：可能返回 401 或直接顯示輸入框
+            # 當前行為：可能返回 401 或直接顯示輸入框，或因模板缺失返回 500
             assert response.status_code in [200, 401, 403, 500]
 
     def test_admin_api_endpoint_current_auth_behavior(self):
@@ -84,6 +109,11 @@ class TestFileUploadCleanupGuard:
         from app import app
 
         with app.test_client() as client:
+            # 獲取 CSRF token
+            token_response = client.get('/api/csrf-token')
+            csrf_token = token_response.get_json().get('csrf_token') if token_response.status_code == 200 else None
+            csrf_headers = {'X-CSRFToken': csrf_token} if csrf_token else {}
+
             # 創建測試檔案
             test_file = BytesIO(b'Test file content for compression')
             test_file.name = 'test.txt'
@@ -96,6 +126,7 @@ class TestFileUploadCleanupGuard:
 
             response = client.post('/compress',
                                  data=data,
+                                 headers=csrf_headers,
                                  content_type='multipart/form-data')
 
             # 當前行為：可能成功 (200/201) 或因為 MongoDB 失敗 (500)
@@ -273,8 +304,8 @@ class TestAPIEndpointsSnapshotGuard:
         with app.test_client() as client:
             response = client.get('/health')
 
-            # 可能因為 MongoDB 連接狀態返回不同代碼
-            assert response.status_code in [200, 500]
+            # 可能因為 MongoDB 連接狀態返回不同代碼 (503 = service unavailable)
+            assert response.status_code in [200, 500, 503]
 
             if response.status_code == 200:
                 data = response.get_json()
@@ -287,8 +318,13 @@ class TestAPIEndpointsSnapshotGuard:
         from app import app
 
         with app.test_client() as client:
+            # 獲取 CSRF token
+            token_response = client.get('/api/csrf-token')
+            csrf_token = token_response.get_json().get('csrf_token') if token_response.status_code == 200 else None
+            csrf_headers = {'X-CSRFToken': csrf_token} if csrf_token else {}
+
             # 測試缺少必要參數
-            response = client.post('/compress', data={})
+            response = client.post('/compress', data={}, headers=csrf_headers)
 
             # 當前行為：應該返回錯誤
             assert response.status_code in [400, 500]
@@ -298,9 +334,14 @@ class TestAPIEndpointsSnapshotGuard:
         from app import app
 
         with app.test_client() as client:
+            # 獲取 CSRF token
+            token_response = client.get('/api/csrf-token')
+            csrf_token = token_response.get_json().get('csrf_token') if token_response.status_code == 200 else None
+            csrf_headers = {'X-CSRFToken': csrf_token} if csrf_token else {}
+
             # 測試取消不存在的任務
             fake_task_id = '507f1f77bcf86cd799439011'
-            response = client.post(f'/cancel/{fake_task_id}')
+            response = client.post(f'/cancel/{fake_task_id}', headers=csrf_headers)
 
             # 當前行為：可能返回 404 或 500
             assert response.status_code in [200, 404, 500]
