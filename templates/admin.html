@@ -1,192 +1,283 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" class="">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理員控制台 - Multi-Layer Compression Tool</title>
+
+    <!-- Dark Mode Detection (同步 index.html 邏輯) -->
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+
+    <!-- 預連接到 CDN -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+
+    <!-- Tailwind CSS v3 via CDN -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        /* === Glassmorphism Card === */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+        .dark .glass-card {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        /* === Gradient Background === */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            opacity: 0.15;
         }
-        .container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 450px;
-            width: 100%;
-            padding: 40px;
+
+        .dark body::before {
+            background: linear-gradient(135deg, #1e3a8a 0%, #312e81 100%);
+            opacity: 0.3;
         }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
+
+        /* === Smooth Transitions === */
+        * {
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
-        .header h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
-        .header p {
-            color: #666;
-            font-size: 14px;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            display: block;
-            color: #333;
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 2px solid #e1e8ed;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        .form-group input:focus {
+
+        /* === Focus Ring Customization === */
+        input:focus {
             outline: none;
             border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
         }
-        .btn {
-            width: 100%;
-            padding: 14px;
+
+        .dark input:focus {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+        }
+
+        /* === Button Gradient === */
+        .btn-gradient {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-        .btn:hover {
+
+        .btn-gradient:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
         }
-        .btn:active {
+
+        .dark .btn-gradient:hover {
+            box-shadow: 0 10px 20px rgba(129, 140, 248, 0.5);
+        }
+
+        .btn-gradient:active {
             transform: translateY(0);
-        }
-        .footer {
-            margin-top: 30px;
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-        }
-        .footer a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        .alert {
-            padding: 12px 16px;
-            background: #fee;
-            border: 1px solid #fcc;
-            border-radius: 8px;
-            color: #c33;
-            font-size: 14px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        .alert.show {
-            display: block;
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #f0f0f0;
-        }
-        .stat {
-            text-align: center;
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: 700;
-            color: #667eea;
-            display: block;
-        }
-        .stat-label {
-            font-size: 12px;
-            color: #999;
-            margin-top: 4px;
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔐 管理員控制台</h1>
-            <p>Multi-Layer File Compression Tool</p>
-        </div>
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4 sm:p-6">
 
-        <div id="alert" class="alert">
-            密碼錯誤，請重試。
-        </div>
+    <!-- Dark Mode Toggle (Fixed Top-Right) -->
+    <button
+        id="theme-toggle"
+        type="button"
+        class="fixed top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full glass-card text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 z-50 transition-all"
+        aria-label="Toggle dark mode"
+    >
+        <!-- Sun Icon (Dark Mode OFF) -->
+        <svg id="theme-toggle-light-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
+        </svg>
+        <!-- Moon Icon (Dark Mode ON) -->
+        <svg id="theme-toggle-dark-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+        </svg>
+    </button>
 
-        <form id="adminForm" method="GET" action="/admin">
-            <div class="form-group">
-                <label for="secret">管理員密碼</label>
-                <input
-                    type="password"
-                    id="secret"
-                    name="secret"
-                    placeholder="請輸入管理員密碼"
-                    required
-                    autocomplete="off"
+    <!-- Main Container -->
+    <div class="w-full max-w-md">
+        <!-- Glassmorphism Login Card -->
+        <div class="glass-card rounded-2xl shadow-2xl p-8 sm:p-10">
+
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <div class="text-5xl mb-4">🔐</div>
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                    管理員控制台
+                </h1>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    Multi-Layer File Compression Tool
+                </p>
+            </div>
+
+            <!-- Error Alert (Hidden by default) -->
+            <div id="alert" class="hidden mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-red-600 dark:text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-red-800 dark:text-red-300">
+                        密碼錯誤，請重試。
+                    </span>
+                </div>
+            </div>
+
+            <!-- Login Form -->
+            <form id="adminForm" method="GET" action="/admin" class="space-y-6">
+                <div>
+                    <label for="secret" class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        管理員密碼
+                    </label>
+                    <input
+                        type="password"
+                        id="secret"
+                        name="secret"
+                        placeholder="請輸入管理員密碼"
+                        required
+                        autocomplete="off"
+                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm font-medium focus:border-indigo-500 dark:focus:border-indigo-400"
+                    >
+                </div>
+                <button
+                    type="submit"
+                    class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base"
                 >
-            </div>
-            <button type="submit" class="btn">登入控制台</button>
-        </form>
+                    登入控制台
+                </button>
+            </form>
 
-        <div class="stats">
-            <div class="stat">
-                <span class="stat-value" id="taskCount">--</span>
-                <span class="stat-label">總任務數</span>
+            <!-- Stats Grid -->
+            <div class="mt-8 pt-8 border-t-2 border-gray-200 dark:border-gray-700">
+                <div class="grid grid-cols-3 gap-4">
+                    <!-- Total Tasks -->
+                    <div class="text-center">
+                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            --
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            總任務數
+                        </div>
+                    </div>
+                    <!-- Active Tasks -->
+                    <div class="text-center">
+                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            --
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            活躍任務
+                        </div>
+                    </div>
+                    <!-- Storage Usage -->
+                    <div class="text-center">
+                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            --
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                            儲存用量
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="stat">
-                <span class="stat-value" id="activeCount">--</span>
-                <span class="stat-label">活躍任務</span>
-            </div>
-            <div class="stat">
-                <span class="stat-value" id="storageSize">--</span>
-                <span class="stat-label">儲存用量</span>
-            </div>
-        </div>
 
-        <div class="footer">
-            <p>v2.0.0-secure-refactor | <a href="/">返回首頁</a></p>
-            <p style="margin-top: 8px;">© 2025 Multi-Layer Compression Tool</p>
+            <!-- Footer -->
+            <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center space-y-2">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    v2.0.0-secure-refactor |
+                    <a href="/" class="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
+                        返回首頁
+                    </a>
+                </p>
+                <p class="text-xs text-gray-400 dark:text-gray-500">
+                    © 2025 Multi-Layer Compression Tool
+                </p>
+            </div>
+
         </div>
     </div>
 
     <script>
-        // Check for error in URL params
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('error') === 'unauthorized') {
-            document.getElementById('alert').classList.add('show');
+        // ========================================
+        // Dark Mode Toggle Logic
+        // ========================================
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
+        const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
+
+        // Show correct icon on page load
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            themeToggleLightIcon.classList.remove('hidden');
+        } else {
+            themeToggleDarkIcon.classList.remove('hidden');
         }
 
-        // Load stats (placeholder - would be loaded via API in production)
+        // Toggle dark mode
+        themeToggleBtn.addEventListener('click', function() {
+            // Toggle icons
+            themeToggleDarkIcon.classList.toggle('hidden');
+            themeToggleLightIcon.classList.toggle('hidden');
+
+            // Toggle dark mode
+            if (localStorage.getItem('color-theme')) {
+                if (localStorage.getItem('color-theme') === 'light') {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                }
+            } else {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                }
+            }
+        });
+
+        // ========================================
+        // Error Alert Display
+        // ========================================
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'unauthorized') {
+            document.getElementById('alert').classList.remove('hidden');
+        }
+
+        // ========================================
+        // Load Stats from API
+        // ========================================
         async function loadStats() {
+            // Load active tasks from /health
             try {
                 const response = await fetch('/health');
                 if (response.ok) {
@@ -197,6 +288,7 @@
                 console.log('Stats unavailable');
             }
 
+            // Load total files and storage from /storage-stats
             try {
                 const response = await fetch('/storage-stats');
                 if (response.ok) {
