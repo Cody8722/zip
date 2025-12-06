@@ -17,6 +17,7 @@
     <!-- CDN Preconnect -->
     <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 
     <!-- Tailwind CSS v3 -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
@@ -32,6 +33,9 @@
             }
         }
     </script>
+
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
     <style>
         .glass-card {
@@ -97,9 +101,88 @@
         .btn-gradient:active {
             transform: translateY(0);
         }
+
+        /* === Skeleton Loader === */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        .dark .skeleton {
+            background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+            background-size: 200% 100%;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* === Card Hover Effects === */
+        .stat-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+        }
+
+        .dark .stat-card:hover {
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        /* === Toast Notifications === */
+        .toast {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            min-width: 300px;
+            padding: 1rem 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            z-index: 9999;
+            opacity: 0;
+            transform: translateX(400px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        /* === Loading Spinner === */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="min-h-screen bg-gray-50 dark:bg-gray-900 {% if not authenticated %}flex items-center justify-center{% endif %} p-4 sm:p-6">
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
 
     <!-- Dark Mode Toggle -->
     <button
@@ -130,7 +213,7 @@
                 </p>
             </div>
 
-            <!-- Error Alert -->
+            <!-- Error Alert (Still shown for fallback) -->
             {% if error == 'unauthorized' or request.args.get('error') == 'unauthorized' %}
             <div class="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
                 <div class="flex items-center">
@@ -160,8 +243,9 @@
                         class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm font-medium"
                     >
                 </div>
-                <button type="submit" class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base">
-                    登入控制台
+                <button type="submit" class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base flex items-center justify-center">
+                    <span id="login-btn-text">登入控制台</span>
+                    <div id="login-spinner" class="spinner ml-3 hidden"></div>
                 </button>
             </form>
 
@@ -169,15 +253,21 @@
             <div class="mt-8 pt-8 border-t-2 border-gray-200 dark:border-gray-700">
                 <div class="grid grid-cols-3 gap-4">
                     <div class="text-center">
-                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-12 h-8 mx-auto rounded"></div>
+                        </div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">總任務數</div>
                     </div>
                     <div class="text-center">
-                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-12 h-8 mx-auto rounded"></div>
+                        </div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">活躍任務</div>
                     </div>
                     <div class="text-center">
-                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-16 h-8 mx-auto rounded"></div>
+                        </div>
                         <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">儲存用量</div>
                     </div>
                 </div>
@@ -221,11 +311,13 @@
         <!-- Stats Grid -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             <!-- Total Tasks Card -->
-            <div class="glass-card rounded-xl shadow-xl p-6">
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-sm font-medium text-gray-600 dark:text-gray-400">總任務數</p>
-                        <p id="dashboardTaskCount" class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">--</p>
+                        <p id="dashboardTaskCount" class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">
+                            <div class="skeleton w-16 h-10 rounded"></div>
+                        </p>
                     </div>
                     <div class="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
                         <svg class="w-8 h-8 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -236,11 +328,13 @@
             </div>
 
             <!-- Active Tasks Card -->
-            <div class="glass-card rounded-xl shadow-xl p-6">
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-sm font-medium text-gray-600 dark:text-gray-400">活躍任務</p>
-                        <p id="dashboardActiveCount" class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">--</p>
+                        <p id="dashboardActiveCount" class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
+                            <div class="skeleton w-16 h-10 rounded"></div>
+                        </p>
                     </div>
                     <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
                         <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,17 +345,48 @@
             </div>
 
             <!-- Storage Usage Card -->
-            <div class="glass-card rounded-xl shadow-xl p-6">
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="text-sm font-medium text-gray-600 dark:text-gray-400">儲存用量</p>
-                        <p id="dashboardStorageSize" class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">--</p>
+                        <p id="dashboardStorageSize" class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">
+                            <div class="skeleton w-20 h-10 rounded"></div>
+                        </p>
                     </div>
                     <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
                         <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
                         </svg>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Storage Doughnut Chart -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                    </svg>
+                    儲存空間分佈
+                </h3>
+                <div class="relative h-64">
+                    <canvas id="storageChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Task Activity Line Chart -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    任務活動趨勢
+                </h3>
+                <div class="relative h-64">
+                    <canvas id="activityChart"></canvas>
                 </div>
             </div>
         </div>
@@ -281,7 +406,9 @@
                 </div>
                 <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <p class="text-gray-600 dark:text-gray-400 font-medium">MongoDB 狀態</p>
-                    <p id="mongoStatus" class="text-lg font-bold text-gray-900 dark:text-white mt-1">--</p>
+                    <p id="mongoStatus" class="text-lg font-bold text-gray-900 dark:text-white mt-1">
+                        <div class="skeleton w-24 h-6 rounded"></div>
+                    </p>
                 </div>
                 <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <p class="text-gray-600 dark:text-gray-400 font-medium">版本號</p>
@@ -297,7 +424,48 @@
     {% endif %}
 
     <script>
+        // ========================================
+        // Toast Notification System
+        // ========================================
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+
+            const icon = type === 'success'
+                ? '<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                : '<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+
+            toast.innerHTML = `
+                <div class="flex items-center">
+                    ${icon}
+                    <span class="font-medium">${message}</span>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => toast.classList.add('show'), 100);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Show login error toast if exists
+        {% if error == 'unauthorized' or request.args.get('error') == 'unauthorized' %}
+        setTimeout(() => showToast('密碼錯誤，請重試', 'error'), 500);
+        {% endif %}
+
+        // Show success toast on dashboard load
+        {% if authenticated %}
+        setTimeout(() => showToast('登入成功！歡迎回來', 'success'), 500);
+        {% endif %}
+
+        // ========================================
         // Dark Mode Toggle
+        // ========================================
         const themeToggleBtn = document.getElementById('theme-toggle');
         const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
         const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
@@ -329,27 +497,213 @@
                     localStorage.setItem('color-theme', 'dark');
                 }
             }
+
+            // Update charts on theme change
+            {% if authenticated %}
+            updateChartTheme();
+            {% endif %}
         });
 
-        // Load Stats
+        // ========================================
+        // CountUp Animation
+        // ========================================
+        function animateValue(element, start, end, duration) {
+            if (!element) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = Math.floor(progress * (end - start) + start);
+                element.textContent = value;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function animateValueWithSuffix(element, start, end, duration, suffix = '') {
+            if (!element) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = (progress * (end - start) + start).toFixed(1);
+                element.textContent = value + suffix;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // ========================================
+        // Chart.js Setup
+        // ========================================
+        {% if authenticated %}
+        let storageChart, activityChart;
+
+        function getChartColors() {
+            const isDark = document.documentElement.classList.contains('dark');
+            return {
+                text: isDark ? '#e5e7eb' : '#374151',
+                grid: isDark ? '#374151' : '#e5e7eb',
+                primary: isDark ? '#818cf8' : '#667eea',
+                success: isDark ? '#34d399' : '#10b981',
+                warning: isDark ? '#fbbf24' : '#f59e0b',
+                purple: isDark ? '#a78bfa' : '#8b5cf6'
+            };
+        }
+
+        function createStorageChart(usedMB, totalMB = 1000) {
+            const ctx = document.getElementById('storageChart');
+            const colors = getChartColors();
+            const freeMB = totalMB - usedMB;
+
+            storageChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['已使用', '可用空間'],
+                    datasets: [{
+                        data: [usedMB, freeMB],
+                        backgroundColor: [colors.purple, colors.grid],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: colors.text,
+                                padding: 20,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.parsed + ' MB';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createActivityChart() {
+            const ctx = document.getElementById('activityChart');
+            const colors = getChartColors();
+
+            // Mock historical data (last 7 days)
+            const labels = ['6天前', '5天前', '4天前', '3天前', '2天前', '昨天', '今天'];
+            const mockData = [3, 5, 2, 8, 6, 4, 2]; // Mock active tasks
+
+            activityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '活躍任務數',
+                        data: mockData,
+                        borderColor: colors.success,
+                        backgroundColor: colors.success + '20',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: colors.success,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: colors.text,
+                                stepSize: 2
+                            },
+                            grid: {
+                                color: colors.grid
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: colors.text
+                            },
+                            grid: {
+                                color: colors.grid
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartTheme() {
+            const colors = getChartColors();
+
+            // Update storage chart
+            if (storageChart) {
+                storageChart.data.datasets[0].backgroundColor[1] = colors.grid;
+                storageChart.options.plugins.legend.labels.color = colors.text;
+                storageChart.update();
+            }
+
+            // Update activity chart
+            if (activityChart) {
+                activityChart.options.scales.y.ticks.color = colors.text;
+                activityChart.options.scales.y.grid.color = colors.grid;
+                activityChart.options.scales.x.ticks.color = colors.text;
+                activityChart.options.scales.x.grid.color = colors.grid;
+                activityChart.update();
+            }
+        }
+        {% endif %}
+
+        // ========================================
+        // Load Stats with Animation
+        // ========================================
         async function loadStats() {
             try {
                 const response = await fetch('/health');
                 if (response.ok) {
                     const data = await response.json();
-                    const activeCount = data.active_tasks || '0';
+                    const activeCount = parseInt(data.active_tasks) || 0;
                     const mongoStatus = data.mongodb || 'unknown';
 
                     // Update login page stats
                     const activeCountEl = document.getElementById('activeCount');
-                    if (activeCountEl) activeCountEl.textContent = activeCount;
+                    if (activeCountEl) {
+                        activeCountEl.innerHTML = '';
+                        activeCountEl.textContent = '0';
+                        animateValue(activeCountEl, 0, activeCount, 1000);
+                    }
 
                     // Update dashboard stats
                     const dashboardActiveEl = document.getElementById('dashboardActiveCount');
-                    if (dashboardActiveEl) dashboardActiveEl.textContent = activeCount;
+                    if (dashboardActiveEl) {
+                        dashboardActiveEl.innerHTML = '';
+                        dashboardActiveEl.textContent = '0';
+                        animateValue(dashboardActiveEl, 0, activeCount, 1000);
+                    }
 
                     const mongoStatusEl = document.getElementById('mongoStatus');
-                    if (mongoStatusEl) mongoStatusEl.textContent = mongoStatus === 'healthy' ? '✅ 連線正常' : '❌ 連線異常';
+                    if (mongoStatusEl) {
+                        mongoStatusEl.innerHTML = mongoStatus === 'healthy' ? '✅ 連線正常' : '❌ 連線異常';
+                    }
                 }
             } catch (err) {
                 console.log('Health stats unavailable');
@@ -359,32 +713,59 @@
                 const response = await fetch('/storage-stats');
                 if (response.ok) {
                     const data = await response.json();
-                    const totalFiles = data.total_files || '0';
-                    const sizeMB = data.total_size_mb || 0;
-                    const sizeText = sizeMB.toFixed(1) + 'MB';
+                    const totalFiles = parseInt(data.total_files) || 0;
+                    const sizeMB = parseFloat(data.total_size_mb) || 0;
 
                     // Update login page stats
                     const taskCountEl = document.getElementById('taskCount');
-                    if (taskCountEl) taskCountEl.textContent = totalFiles;
+                    if (taskCountEl) {
+                        taskCountEl.innerHTML = '';
+                        taskCountEl.textContent = '0';
+                        animateValue(taskCountEl, 0, totalFiles, 1000);
+                    }
 
                     const storageSizeEl = document.getElementById('storageSize');
-                    if (storageSizeEl) storageSizeEl.textContent = sizeText;
+                    if (storageSizeEl) {
+                        storageSizeEl.innerHTML = '';
+                        storageSizeEl.textContent = '0.0MB';
+                        animateValueWithSuffix(storageSizeEl, 0, sizeMB, 1000, 'MB');
+                    }
 
                     // Update dashboard stats
                     const dashboardTaskEl = document.getElementById('dashboardTaskCount');
-                    if (dashboardTaskEl) dashboardTaskEl.textContent = totalFiles;
+                    if (dashboardTaskEl) {
+                        dashboardTaskEl.innerHTML = '';
+                        dashboardTaskEl.textContent = '0';
+                        animateValue(dashboardTaskEl, 0, totalFiles, 1000);
+                    }
 
                     const dashboardStorageEl = document.getElementById('dashboardStorageSize');
-                    if (dashboardStorageEl) dashboardStorageEl.textContent = sizeText;
+                    if (dashboardStorageEl) {
+                        dashboardStorageEl.innerHTML = '';
+                        dashboardStorageEl.textContent = '0.0MB';
+                        animateValueWithSuffix(dashboardStorageEl, 0, sizeMB, 1000, 'MB');
+                    }
+
+                    // Create/Update storage chart
+                    {% if authenticated %}
+                    if (!storageChart) {
+                        createStorageChart(sizeMB);
+                    }
+                    {% endif %}
                 }
             } catch (err) {
                 console.log('Storage stats unavailable');
             }
         }
 
+        // Initialize
         loadStats();
-        // Refresh stats every 30 seconds for dashboard
+
         {% if authenticated %}
+        // Create activity chart
+        createActivityChart();
+
+        // Refresh stats every 30 seconds
         setInterval(loadStats, 30000);
         {% endif %}
     </script>
