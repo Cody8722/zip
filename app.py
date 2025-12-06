@@ -1943,7 +1943,34 @@ def start_shared_decompression(compress_task_id):
 
 @app.route('/admin')
 def admin_dashboard():
-    return render_template('admin.html')
+    """管理員控制台頁面（支援密碼驗證）"""
+    # 檢查是否提供了管理員密碼
+    provided_secret = request.args.get('secret', '')
+
+    # 如果沒有設定 ADMIN_SECRET，顯示錯誤
+    if not ADMIN_SECRET:
+        return render_template('admin.html',
+                             error='server_not_configured',
+                             error_message='伺服器未設定管理員密碼')
+
+    # 如果沒有提供密碼，顯示登入表單
+    if not provided_secret:
+        return render_template('admin.html', authenticated=False)
+
+    # 驗證密碼（使用 secrets.compare_digest 防止時序攻擊）
+    try:
+        if secrets.compare_digest(str(provided_secret), str(ADMIN_SECRET)):
+            # 密碼正確 - 顯示管理員儀表板
+            return render_template('admin.html', authenticated=True)
+        else:
+            # 密碼錯誤 - 重定向並顯示錯誤
+            return redirect('/admin?error=unauthorized')
+    except Exception as e:
+        logging.error(f"管理員密碼驗證失敗: {str(e)}")
+        return render_template('admin.html',
+                             authenticated=False,
+                             error='validation_failed',
+                             error_message='密碼驗證失敗')
 
 @app.route('/admin/api/decompression-logs')
 def get_decompression_logs():

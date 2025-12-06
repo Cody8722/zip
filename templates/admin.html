@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理員控制台 - Multi-Layer Compression Tool</title>
+    <title>{% if authenticated %}管理員儀表板{% else %}管理員登入{% endif %} - Multi-Layer Compression Tool</title>
 
-    <!-- Dark Mode Detection (同步 index.html 邏輯) -->
+    <!-- Dark Mode Detection -->
     <script>
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
@@ -14,11 +14,11 @@
         }
     </script>
 
-    <!-- 預連接到 CDN -->
+    <!-- CDN Preconnect -->
     <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
 
-    <!-- Tailwind CSS v3 via CDN -->
+    <!-- Tailwind CSS v3 -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
     <script>
         tailwind.config = {
@@ -34,7 +34,6 @@
     </script>
 
     <style>
-        /* === Glassmorphism Card === */
         .glass-card {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(20px);
@@ -49,7 +48,6 @@
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
         }
 
-        /* === Gradient Background === */
         body::before {
             content: '';
             position: fixed;
@@ -67,12 +65,10 @@
             opacity: 0.3;
         }
 
-        /* === Smooth Transitions === */
         * {
             transition: background-color 0.3s ease, border-color 0.3s ease;
         }
 
-        /* === Focus Ring Customization === */
         input:focus {
             outline: none;
             border-color: #667eea;
@@ -84,7 +80,6 @@
             box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
         }
 
-        /* === Button Gradient === */
         .btn-gradient {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -104,31 +99,27 @@
         }
     </style>
 </head>
-<body class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4 sm:p-6">
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 {% if not authenticated %}flex items-center justify-center{% endif %} p-4 sm:p-6">
 
-    <!-- Dark Mode Toggle (Fixed Top-Right) -->
+    <!-- Dark Mode Toggle -->
     <button
         id="theme-toggle"
         type="button"
-        class="fixed top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full glass-card text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 z-50 transition-all"
+        class="fixed top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full glass-card text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 z-50"
         aria-label="Toggle dark mode"
     >
-        <!-- Sun Icon (Dark Mode OFF) -->
-        <svg id="theme-toggle-light-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <svg id="theme-toggle-light-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20">
             <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
         </svg>
-        <!-- Moon Icon (Dark Mode ON) -->
-        <svg id="theme-toggle-dark-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+        <svg id="theme-toggle-dark-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20">
             <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
         </svg>
     </button>
 
-    <!-- Main Container -->
+    {% if not authenticated %}
+    <!-- ==================== 登入表單視圖 ==================== -->
     <div class="w-full max-w-md">
-        <!-- Glassmorphism Login Card -->
         <div class="glass-card rounded-2xl shadow-2xl p-8 sm:p-10">
-
-            <!-- Header -->
             <div class="text-center mb-8">
                 <div class="text-5xl mb-4">🔐</div>
                 <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
@@ -139,8 +130,9 @@
                 </p>
             </div>
 
-            <!-- Error Alert (Hidden by default) -->
-            <div id="alert" class="hidden mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+            <!-- Error Alert -->
+            {% if error == 'unauthorized' or request.args.get('error') == 'unauthorized' %}
+            <div class="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
                 <div class="flex items-center">
                     <svg class="w-5 h-5 text-red-600 dark:text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
@@ -150,6 +142,7 @@
                     </span>
                 </div>
             </div>
+            {% endif %}
 
             <!-- Login Form -->
             <form id="adminForm" method="GET" action="/admin" class="space-y-6">
@@ -164,46 +157,28 @@
                         placeholder="請輸入管理員密碼"
                         required
                         autocomplete="off"
-                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm font-medium focus:border-indigo-500 dark:focus:border-indigo-400"
+                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm font-medium"
                     >
                 </div>
-                <button
-                    type="submit"
-                    class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base"
-                >
+                <button type="submit" class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base">
                     登入控制台
                 </button>
             </form>
 
-            <!-- Stats Grid -->
+            <!-- Stats Preview -->
             <div class="mt-8 pt-8 border-t-2 border-gray-200 dark:border-gray-700">
                 <div class="grid grid-cols-3 gap-4">
-                    <!-- Total Tasks -->
                     <div class="text-center">
-                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-                            --
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                            總任務數
-                        </div>
+                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">總任務數</div>
                     </div>
-                    <!-- Active Tasks -->
                     <div class="text-center">
-                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-                            --
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                            活躍任務
-                        </div>
+                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">活躍任務</div>
                     </div>
-                    <!-- Storage Usage -->
                     <div class="text-center">
-                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-                            --
-                        </div>
-                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                            儲存用量
-                        </div>
+                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">--</div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">儲存用量</div>
                     </div>
                 </div>
             </div>
@@ -212,40 +187,131 @@
             <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center space-y-2">
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                     v2.0.0-secure-refactor |
-                    <a href="/" class="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">
-                        返回首頁
-                    </a>
+                    <a href="/" class="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">返回首頁</a>
                 </p>
-                <p class="text-xs text-gray-400 dark:text-gray-500">
-                    © 2025 Multi-Layer Compression Tool
-                </p>
+                <p class="text-xs text-gray-400 dark:text-gray-500">© 2025 Multi-Layer Compression Tool</p>
             </div>
-
         </div>
     </div>
 
+    {% else %}
+    <!-- ==================== 管理員儀表板視圖 ==================== -->
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="glass-card rounded-2xl shadow-2xl p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="text-4xl">🎛️</div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">管理員儀表板</h1>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Multi-Layer Compression Tool - v2.0.0</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        返回首頁
+                    </a>
+                    <a href="/admin" class="px-4 py-2 text-sm font-medium text-white btn-gradient rounded-lg shadow-lg">
+                        登出
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <!-- Total Tasks Card -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">總任務數</p>
+                        <p id="dashboardTaskCount" class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">--</p>
+                    </div>
+                    <div class="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Tasks Card -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">活躍任務</p>
+                        <p id="dashboardActiveCount" class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">--</p>
+                    </div>
+                    <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage Usage Card -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">儲存用量</p>
+                        <p id="dashboardStorageSize" class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">--</p>
+                    </div>
+                    <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="glass-card rounded-xl shadow-xl p-6">
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                <svg class="w-6 h-6 mr-2 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                系統資訊
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">系統狀態</p>
+                    <p id="systemStatus" class="text-lg font-bold text-green-600 dark:text-green-400 mt-1">運行中</p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">MongoDB 狀態</p>
+                    <p id="mongoStatus" class="text-lg font-bold text-gray-900 dark:text-white mt-1">--</p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">版本號</p>
+                    <p class="text-lg font-bold text-gray-900 dark:text-white mt-1">v2.0.0-secure-refactor</p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">最大併發任務</p>
+                    <p id="maxConcurrent" class="text-lg font-bold text-gray-900 dark:text-white mt-1">3</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <script>
-        // ========================================
-        // Dark Mode Toggle Logic
-        // ========================================
+        // Dark Mode Toggle
         const themeToggleBtn = document.getElementById('theme-toggle');
         const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
         const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
 
-        // Show correct icon on page load
         if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             themeToggleLightIcon.classList.remove('hidden');
         } else {
             themeToggleDarkIcon.classList.remove('hidden');
         }
 
-        // Toggle dark mode
         themeToggleBtn.addEventListener('click', function() {
-            // Toggle icons
             themeToggleDarkIcon.classList.toggle('hidden');
             themeToggleLightIcon.classList.toggle('hidden');
 
-            // Toggle dark mode
             if (localStorage.getItem('color-theme')) {
                 if (localStorage.getItem('color-theme') === 'light') {
                     document.documentElement.classList.add('dark');
@@ -265,45 +331,62 @@
             }
         });
 
-        // ========================================
-        // Error Alert Display
-        // ========================================
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('error') === 'unauthorized') {
-            document.getElementById('alert').classList.remove('hidden');
-        }
-
-        // ========================================
-        // Load Stats from API
-        // ========================================
+        // Load Stats
         async function loadStats() {
-            // Load active tasks from /health
             try {
                 const response = await fetch('/health');
                 if (response.ok) {
                     const data = await response.json();
-                    document.getElementById('activeCount').textContent = data.active_tasks || '0';
+                    const activeCount = data.active_tasks || '0';
+                    const mongoStatus = data.mongodb || 'unknown';
+
+                    // Update login page stats
+                    const activeCountEl = document.getElementById('activeCount');
+                    if (activeCountEl) activeCountEl.textContent = activeCount;
+
+                    // Update dashboard stats
+                    const dashboardActiveEl = document.getElementById('dashboardActiveCount');
+                    if (dashboardActiveEl) dashboardActiveEl.textContent = activeCount;
+
+                    const mongoStatusEl = document.getElementById('mongoStatus');
+                    if (mongoStatusEl) mongoStatusEl.textContent = mongoStatus === 'healthy' ? '✅ 連線正常' : '❌ 連線異常';
                 }
             } catch (err) {
-                console.log('Stats unavailable');
+                console.log('Health stats unavailable');
             }
 
-            // Load total files and storage from /storage-stats
             try {
                 const response = await fetch('/storage-stats');
                 if (response.ok) {
                     const data = await response.json();
-                    document.getElementById('taskCount').textContent = data.total_files || '0';
+                    const totalFiles = data.total_files || '0';
                     const sizeMB = data.total_size_mb || 0;
-                    document.getElementById('storageSize').textContent = sizeMB.toFixed(1) + 'MB';
+                    const sizeText = sizeMB.toFixed(1) + 'MB';
+
+                    // Update login page stats
+                    const taskCountEl = document.getElementById('taskCount');
+                    if (taskCountEl) taskCountEl.textContent = totalFiles;
+
+                    const storageSizeEl = document.getElementById('storageSize');
+                    if (storageSizeEl) storageSizeEl.textContent = sizeText;
+
+                    // Update dashboard stats
+                    const dashboardTaskEl = document.getElementById('dashboardTaskCount');
+                    if (dashboardTaskEl) dashboardTaskEl.textContent = totalFiles;
+
+                    const dashboardStorageEl = document.getElementById('dashboardStorageSize');
+                    if (dashboardStorageEl) dashboardStorageEl.textContent = sizeText;
                 }
             } catch (err) {
                 console.log('Storage stats unavailable');
             }
         }
 
-        // Load stats on page load
         loadStats();
+        // Refresh stats every 30 seconds for dashboard
+        {% if authenticated %}
+        setInterval(loadStats, 30000);
+        {% endif %}
     </script>
 </body>
 </html>
