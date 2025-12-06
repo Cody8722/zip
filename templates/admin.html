@@ -737,6 +737,7 @@
                     const data = await response.json();
                     const totalFiles = parseInt(data.total_files) || 0;
                     const sizeMB = parseFloat(data.total_size_mb) || 0;
+                    const totalMB = parseFloat(data.total_space_mb) || 512;  // 真實總容量
 
                     // Update login page stats
                     const taskCountEl = document.getElementById('taskCount');
@@ -768,10 +769,14 @@
                         animateValueWithSuffix(dashboardStorageEl, 0, sizeMB, 1000, 'MB');
                     }
 
-                    // Create/Update storage chart
+                    // Create/Update storage chart with REAL total capacity
                     {% if authenticated %}
                     if (!storageChart) {
-                        createStorageChart(sizeMB);
+                        createStorageChart(sizeMB, totalMB);  // ✅ 使用真實總容量
+                    } else {
+                        // Update existing chart with new data
+                        storageChart.data.datasets[0].data = [sizeMB, totalMB - sizeMB];
+                        storageChart.update();
                     }
                     {% endif %}
                 }
