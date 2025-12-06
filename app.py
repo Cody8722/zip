@@ -2032,18 +2032,39 @@ def get_decompression_logs():
 def health_check():
     health = {'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()}
     status_code = 200
+
+    # MongoDB 連線檢查
     try:
         client.admin.command('ping')
-        health['database'] = 'connected'
+        health['mongodb'] = 'healthy'  # 前端尋找的欄位名稱
+        health['database'] = 'connected'  # 向後兼容
     except Exception as e:
-        health['status'] = 'degraded'; health['database'] = f'disconnected: {str(e)}'; status_code = 503
+        health['status'] = 'degraded'
+        health['mongodb'] = 'unhealthy'
+        health['database'] = f'disconnected: {str(e)}'
+        status_code = 503
+
+    # 活躍任務計數
+    try:
+        with active_tasks_lock:
+            health['active_tasks'] = active_task_count
+    except Exception as e:
+        health['active_tasks'] = 0
+        logging.error(f"Failed to get active task count: {str(e)}")
+
+    # 磁碟空間檢查
     try:
         disk = shutil.disk_usage('/')
         health['disk_space'] = {'total_gb': disk.total // (2**30), 'free_gb': disk.free // (2**30)}
         if (disk.free / disk.total) < 0.1:
-             health['status'] = 'degraded'; health['disk_space']['warning'] = 'Low disk space'; status_code = 503
+             health['status'] = 'degraded'
+             health['disk_space']['warning'] = 'Low disk space'
+             status_code = 503
     except Exception as e:
-        health['status'] = 'degraded'; health['disk_space'] = f'Error: {str(e)}'; status_code = 503
+        health['status'] = 'degraded'
+        health['disk_space'] = f'Error: {str(e)}'
+        status_code = 503
+
     return jsonify(health), status_code
     
 @app.route('/storage-stats')
@@ -2094,6 +2115,75 @@ def storage_stats():
         })
     except Exception as e:
         return handle_route_exception(e, 'storage_stats')
+
+@app.route('/api/task-stats')
+def task_stats():
+    """獲取過去 7 天的任務統計數據（用於折線圖）"""
+    try:
+        if tasks_collection is None:
+            return jsonify({'error': '資料庫未連線'}), 500
+
+        # 計算過去 7 天的日期範圍
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        days_ago_7 = today - timedelta(days=6)  # 包含今天共 7 天
+
+        # 使用聚合查詢按日期分組統計任務數量
+        pipeline = [
+            {
+                '$match': {
+                    'created_at': {'$gte': days_ago_7}
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        '$dateToString': {
+                            'format': '%Y-%m-%d',
+                            'date': '$created_at'
+                        }
+                    },
+                    'count': {'$sum': 1}
+                }
+            },
+            {
+                '$sort': {'_id': 1}
+            }
+        ]
+
+        results = list(tasks_collection.aggregate(pipeline))
+
+        # 創建完整的 7 天數據（填充缺失的日期為 0）
+        daily_counts = {}
+        for result in results:
+            daily_counts[result['_id']] = result['count']
+
+        # 生成最近 7 天的完整數據
+        labels = []
+        data = []
+        for i in range(6, -1, -1):  # 從 6 天前到今天
+            date = today - timedelta(days=i)
+            date_str = date.strftime('%Y-%m-%d')
+
+            # 生成標籤（中文）
+            if i == 0:
+                label = '今天'
+            elif i == 1:
+                label = '昨天'
+            else:
+                label = f'{i}天前'
+
+            labels.append(label)
+            data.append(daily_counts.get(date_str, 0))
+
+        return jsonify({
+            'labels': labels,
+            'data': data,
+            'total_tasks': sum(data)
+        })
+
+    except Exception as e:
+        logging.error(f"Task stats error: {str(e)}", exc_info=True)
+        return jsonify({'error': '無法獲取任務統計數據'}), 500
 
 @app.route('/cancel/<task_id>', methods=['POST'])
 def cancel_task(task_id):

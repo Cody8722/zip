@@ -594,21 +594,35 @@
             });
         }
 
-        function createActivityChart() {
+        async function createActivityChart() {
             const ctx = document.getElementById('activityChart');
             const colors = getChartColors();
 
-            // Mock historical data (last 7 days)
-            const labels = ['6天前', '5天前', '4天前', '3天前', '2天前', '昨天', '今天'];
-            const mockData = [3, 5, 2, 8, 6, 4, 2]; // Mock active tasks
+            // Fetch real historical data from API
+            let labels = ['6天前', '5天前', '4天前', '3天前', '2天前', '昨天', '今天'];
+            let taskData = [0, 0, 0, 0, 0, 0, 0]; // Default fallback
+
+            try {
+                const response = await fetch('/api/task-stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    labels = data.labels || labels;
+                    taskData = data.data || taskData;
+                    console.log('✅ Loaded real task data:', taskData);
+                } else {
+                    console.warn('⚠️ Failed to load task stats, using fallback data');
+                }
+            } catch (err) {
+                console.error('❌ Error fetching task stats:', err);
+            }
 
             activityChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: '活躍任務數',
-                        data: mockData,
+                        label: '任務數量',
+                        data: taskData,
                         borderColor: colors.success,
                         backgroundColor: colors.success + '20',
                         borderWidth: 3,
@@ -626,6 +640,13 @@
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '任務數量: ' + context.parsed.y;
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -633,7 +654,8 @@
                             beginAtZero: true,
                             ticks: {
                                 color: colors.text,
-                                stepSize: 2
+                                stepSize: 1,
+                                precision: 0
                             },
                             grid: {
                                 color: colors.grid
