@@ -15,6 +15,7 @@ import sys
 import os
 from datetime import datetime, timedelta
 import random
+import secrets
 
 # 添加父目錄到 Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -122,7 +123,7 @@ def create_mock_task(task_number):
         },
         "created_at": created_at,
         "result_filename": f"compressed_{task_number}.{'zip' if status == '完成' else 'tmp'}",
-        "delete_token": ObjectId().hex,
+        "delete_token": secrets.token_hex(16),
         "cancel_requested": False
     }
 
