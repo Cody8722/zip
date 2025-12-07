@@ -36,8 +36,8 @@ STATUS_DISTRIBUTION = {
     '等待中': 0.05     # 5% 等待中
 }
 
-# 文件大小範圍（MB）
-FILE_SIZE_RANGE = (0.5, 50.0)
+# 文件大小範圍（MB） - 降低以節省記憶體
+FILE_SIZE_RANGE = (0.1, 5.0)  # 減小到 0.1-5 MB
 
 # 壓縮格式選項
 COMPRESSION_FORMATS = ['zip', '7z', 'targz', 'tarbz2', 'tarxz']
@@ -189,38 +189,47 @@ def seed_database():
             else:
                 print("ℹ️  保留現有數據，將追加新任務")
 
-        # 生成任務
-        print(f"\n📝 生成 {TOTAL_TASKS} 個任務...")
-        tasks = []
+        # 生成並插入任務（逐個處理以節省記憶體）
+        print(f"\n📝 生成並寫入 {TOTAL_TASKS} 個任務...")
         status_counts = {status: 0 for status in STATUS_DISTRIBUTION.keys()}
         total_size_mb = 0
+        inserted_count = 0
+        all_tasks = []  # 僅用於最後的日期統計
 
         for i in range(1, TOTAL_TASKS + 1):
-            task = create_mock_task(i)
-            tasks.append(task)
-            status_counts[task['status']] += 1
+            try:
+                # 創建任務
+                task = create_mock_task(i)
+                status_counts[task['status']] += 1
 
-            # 計算總文件大小
-            if task['status'] == '完成' and 'result_file_id' in task:
-                # 從 GridFS 獲取文件大小
-                file_obj = fs.get(ObjectId(task['result_file_id']))
-                total_size_mb += file_obj.length / (1024 * 1024)
+                # 計算文件大小
+                if task['status'] == '完成' and 'result_file_id' in task:
+                    file_obj = fs.get(ObjectId(task['result_file_id']))
+                    total_size_mb += file_obj.length / (1024 * 1024)
 
-            # 顯示進度
-            if i % 10 == 0:
-                print(f"  進度：{i}/{TOTAL_TASKS} ({i/TOTAL_TASKS*100:.0f}%)")
+                # 立即插入到數據庫（減少記憶體使用）
+                tasks_collection.insert_one(task)
+                inserted_count += 1
 
-        # 批量插入任務
-        print("\n💾 寫入數據庫...")
-        result = tasks_collection.insert_many(tasks)
-        print(f"✅ 成功插入 {len(result.inserted_ids)} 個任務")
+                # 保存輕量級副本用於統計（只保留創建時間）
+                all_tasks.append({'created_at': task['created_at']})
+
+                # 顯示進度
+                if i % 5 == 0:
+                    print(f"  進度：{i}/{TOTAL_TASKS} ({i/TOTAL_TASKS*100:.0f}%) - 已寫入 {inserted_count} 個")
+
+            except Exception as e:
+                print(f"  ⚠️  任務 {i} 創建失敗：{str(e)}")
+                continue
+
+        print(f"\n✅ 成功插入 {inserted_count} 個任務")
 
         # 顯示統計
         print("\n📊 數據統計：")
         print("-" * 50)
-        print(f"  總任務數：{TOTAL_TASKS}")
+        print(f"  總任務數：{inserted_count}")
         for status, count in status_counts.items():
-            percentage = count / TOTAL_TASKS * 100
+            percentage = count / inserted_count * 100 if inserted_count > 0 else 0
             print(f"  {status}：{count} ({percentage:.1f}%)")
         print(f"  總儲存空間：{total_size_mb:.2f} MB")
         print("-" * 50)
@@ -232,7 +241,7 @@ def seed_database():
         for i in range(6, -1, -1):
             date = today - timedelta(days=i)
             date_str = date.strftime('%Y-%m-%d')
-            count = sum(1 for task in tasks if task['created_at'].date() == date.date())
+            count = sum(1 for task in all_tasks if task['created_at'].date() == date.date())
             if i == 0:
                 label = '今天'
             elif i == 1:
