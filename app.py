@@ -2046,7 +2046,7 @@ def health_check():
 
     # 活躍任務計數
     try:
-        with active_tasks_lock:
+        with task_lock:
             health['active_tasks'] = active_task_count
     except Exception as e:
         health['active_tasks'] = 0
