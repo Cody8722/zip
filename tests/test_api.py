@@ -50,6 +50,23 @@ class TestHealthCheck:
         # 首页返回 HTML
         assert 'text/html' in response.content_type
 
+    def test_health_endpoint(self, client):
+        """测试健康检查端点"""
+        response = client.get('/health')
+        assert response.status_code in [200, 503]
+
+        if response.status_code == 200:
+            data = response.get_json()
+            # 验证必需字段存在
+            assert 'status' in data
+            assert 'mongodb' in data  # 关键：验证新的 mongodb 字段
+            assert 'active_tasks' in data
+
+            # 验证字段值
+            assert data['status'] in ['healthy', 'degraded']
+            assert data['mongodb'] in ['healthy', 'unhealthy']
+            assert isinstance(data['active_tasks'], int)
+
     def test_task_status_endpoint_invalid_id(self, client):
         """测试任务状态端点（无效ID）"""
         response = client.get('/status/invalid_task_id')
@@ -325,6 +342,56 @@ class TestEmailNotification:
                               content_type='multipart/form-data')
         # 邮件发送可能失败，但请求应该被接受
         assert response.status_code in [200, 201, 400, 429, 500]
+
+
+class TestStatsAPI:
+    """统计数据 API 测试"""
+
+    def test_task_stats_endpoint(self, client):
+        """测试任务统计端点"""
+        response = client.get('/api/task-stats')
+        # 应该返回 200 或 500（如果数据库未连接）
+        assert response.status_code in [200, 500]
+
+        if response.status_code == 200:
+            data = response.get_json()
+
+            # 验证 JSON 结构
+            assert 'labels' in data, "Response should contain 'labels' field"
+            assert 'data' in data, "Response should contain 'data' field"
+            assert 'total_tasks' in data, "Response should contain 'total_tasks' field"
+
+            # 验证数据类型
+            assert isinstance(data['labels'], list), "labels should be a list"
+            assert isinstance(data['data'], list), "data should be a list"
+            assert isinstance(data['total_tasks'], int), "total_tasks should be an integer"
+
+            # 验证数据长度（应该是 7 天）
+            assert len(data['labels']) == 7, "Should return 7 days of data"
+            assert len(data['data']) == 7, "Should return 7 data points"
+
+            # 验证数据格式
+            for count in data['data']:
+                assert isinstance(count, int), "Each data point should be an integer"
+                assert count >= 0, "Task count should be non-negative"
+
+            # 验证标签格式（中文）
+            expected_labels = ['6天前', '5天前', '4天前', '3天前', '2天前', '昨天', '今天']
+            assert data['labels'] == expected_labels, f"Labels should match expected format: {expected_labels}"
+
+            # 验证 total_tasks 是所有天数的总和
+            assert data['total_tasks'] == sum(data['data']), "total_tasks should equal sum of daily counts"
+
+    def test_task_stats_response_time(self, client):
+        """测试任务统计端点响应时间"""
+        import time
+        start = time.time()
+        response = client.get('/api/task-stats')
+        elapsed = time.time() - start
+
+        # 响应应该在合理时间内返回（<2秒）
+        assert elapsed < 2.0, f"API response took too long: {elapsed:.2f}s"
+        assert response.status_code in [200, 500]
 
 
 class TestErrorHandling:
