@@ -559,6 +559,17 @@
             const ctx = document.getElementById('storageChart');
             const colors = getChartColors();
             const freeMB = totalMB - usedMB;
+            const usagePercent = ((usedMB / totalMB) * 100).toFixed(1);
+
+            // 根據使用率選擇顏色（綠色 < 60%，黃色 60-80%，紅色 > 80%）
+            let usedColor;
+            if (usagePercent < 60) {
+                usedColor = colors.success;  // 綠色
+            } else if (usagePercent < 80) {
+                usedColor = colors.warning;  // 黃色
+            } else {
+                usedColor = '#ef4444';  // 紅色
+            }
 
             storageChart = new Chart(ctx, {
                 type: 'doughnut',
@@ -566,7 +577,7 @@
                     labels: ['已使用', '可用空間'],
                     datasets: [{
                         data: [usedMB, freeMB],
-                        backgroundColor: [colors.purple, colors.grid],
+                        backgroundColor: [usedColor, colors.grid],
                         borderWidth: 0
                     }]
                 },
@@ -585,13 +596,40 @@
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    return context.label + ': ' + context.parsed + ' MB';
+                                    const percent = ((context.parsed / totalMB) * 100).toFixed(1);
+                                    return context.label + ': ' + context.parsed + ' MB (' + percent + '%)';
                                 }
                             }
                         }
-                    }
+                    },
+                    // 中央顯示使用率百分比
+                    cutout: '70%'
                 }
             });
+
+            // 在圖表中央顯示使用率
+            const centerTextPlugin = {
+                id: 'centerText',
+                afterDraw: function(chart) {
+                    const ctx = chart.ctx;
+                    const centerX = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
+                    const centerY = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top) / 2;
+
+                    ctx.save();
+                    ctx.font = 'bold 24px Inter';
+                    ctx.fillStyle = usedColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(usagePercent + '%', centerX, centerY - 10);
+
+                    ctx.font = '12px Inter';
+                    ctx.fillStyle = colors.text;
+                    ctx.fillText('已使用', centerX, centerY + 15);
+                    ctx.restore();
+                }
+            };
+
+            Chart.register(centerTextPlugin);
         }
 
         async function createActivityChart() {
@@ -777,6 +815,14 @@
                         // Update existing chart with new data
                         storageChart.data.datasets[0].data = [sizeMB, totalMB - sizeMB];
                         storageChart.update();
+                    }
+
+                    // 儲存空間警告檢查
+                    const usagePercent = (sizeMB / totalMB) * 100;
+                    if (usagePercent >= 95) {
+                        showToast('⚠️ 儲存空間已滿 ' + usagePercent.toFixed(1) + '%！請清理舊檔案', 'error');
+                    } else if (usagePercent >= 80) {
+                        showToast('⚠️ 儲存空間使用率達 ' + usagePercent.toFixed(1) + '%', 'error');
                     }
                     {% endif %}
                 }
