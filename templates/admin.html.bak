@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理員控制台 - Multi-Layer Compression Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 450px;
+            width: 100%;
+            padding: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+        }
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .alert {
+            padding: 12px 16px;
+            background: #fee;
+            border: 1px solid #fcc;
+            border-radius: 8px;
+            color: #c33;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert.show {
+            display: block;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #f0f0f0;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+            display: block;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 管理員控制台</h1>
+            <p>Multi-Layer File Compression Tool</p>
+        </div>
+
+        <div id="alert" class="alert">
+            密碼錯誤，請重試。
+        </div>
+
+        <form id="adminForm" method="GET" action="/admin">
+            <div class="form-group">
+                <label for="secret">管理員密碼</label>
+                <input
+                    type="password"
+                    id="secret"
+                    name="secret"
+                    placeholder="請輸入管理員密碼"
+                    required
+                    autocomplete="off"
+                >
+            </div>
+            <button type="submit" class="btn">登入控制台</button>
+        </form>
+
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-value" id="taskCount">--</span>
+                <span class="stat-label">總任務數</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="activeCount">--</span>
+                <span class="stat-label">活躍任務</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" id="storageSize">--</span>
+                <span class="stat-label">儲存用量</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>v2.0.0-secure-refactor | <a href="/">返回首頁</a></p>
+            <p style="margin-top: 8px;">© 2025 Multi-Layer Compression Tool</p>
+        </div>
+    </div>
+
+    <script>
+        // Check for error in URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'unauthorized') {
+            document.getElementById('alert').classList.add('show');
+        }
+
+        // Load stats (placeholder - would be loaded via API in production)
+        async function loadStats() {
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('activeCount').textContent = data.active_tasks || '0';
+                }
+            } catch (err) {
+                console.log('Stats unavailable');
+            }
+
+            try {
+                const response = await fetch('/storage-stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('taskCount').textContent = data.total_files || '0';
+                    const sizeMB = data.total_size_mb || 0;
+                    document.getElementById('storageSize').textContent = sizeMB.toFixed(1) + 'MB';
+                }
+            } catch (err) {
+                console.log('Storage stats unavailable');
+            }
+        }
+
+        // Load stats on page load
+        loadStats();
+    </script>
+</body>
+</html>

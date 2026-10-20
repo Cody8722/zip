@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if authenticated %}管理員儀表板{% else %}管理員登入{% endif %} - Multi-Layer Compression Tool</title>
+
+    <!-- Dark Mode Detection -->
+    <script>
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+
+    <!-- CDN Preconnect -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .dark .glass-card {
+            background: rgba(31, 41, 55, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: -1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            opacity: 0.15;
+        }
+
+        .dark body::before {
+            background: linear-gradient(135deg, #1e3a8a 0%, #312e81 100%);
+            opacity: 0.3;
+        }
+
+        * {
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+        }
+
+        .dark input:focus {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+        }
+
+        .btn-gradient {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-gradient:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .dark .btn-gradient:hover {
+            box-shadow: 0 10px 20px rgba(129, 140, 248, 0.5);
+        }
+
+        .btn-gradient:active {
+            transform: translateY(0);
+        }
+
+        /* === Skeleton Loader === */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        .dark .skeleton {
+            background: linear-gradient(90deg, #374151 25%, #4b5563 50%, #374151 75%);
+            background-size: 200% 100%;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* === Card Hover Effects === */
+        .stat-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.25);
+        }
+
+        .dark .stat-card:hover {
+            box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        /* === Toast Notifications === */
+        .toast {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            min-width: 300px;
+            padding: 1rem 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            z-index: 9999;
+            opacity: 0;
+            transform: translateX(400px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .toast-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .toast-error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        /* === Loading Spinner === */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50 dark:bg-gray-900 {% if not authenticated %}flex items-center justify-center{% endif %} p-4 sm:p-6">
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Dark Mode Toggle -->
+    <button
+        id="theme-toggle"
+        type="button"
+        class="fixed top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full glass-card text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 z-50"
+        aria-label="Toggle dark mode"
+    >
+        <svg id="theme-toggle-light-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path>
+        </svg>
+        <svg id="theme-toggle-dark-icon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+        </svg>
+    </button>
+
+    {% if not authenticated %}
+    <!-- ==================== 登入表單視圖 ==================== -->
+    <div class="w-full max-w-md">
+        <div class="glass-card rounded-2xl shadow-2xl p-8 sm:p-10">
+            <div class="text-center mb-8">
+                <div class="text-5xl mb-4">🔐</div>
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                    管理員控制台
+                </h1>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    Multi-Layer File Compression Tool
+                </p>
+            </div>
+
+            <!-- Error Alert (Still shown for fallback) -->
+            {% if error == 'unauthorized' or request.args.get('error') == 'unauthorized' %}
+            <div class="mb-6 p-4 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800">
+                <div class="flex items-center">
+                    <svg class="w-5 h-5 text-red-600 dark:text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                    <span class="text-sm font-medium text-red-800 dark:text-red-300">
+                        密碼錯誤，請重試。
+                    </span>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Login Form -->
+            <form id="adminForm" method="GET" action="/admin" class="space-y-6">
+                <div>
+                    <label for="secret" class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                        管理員密碼
+                    </label>
+                    <input
+                        type="password"
+                        id="secret"
+                        name="secret"
+                        placeholder="請輸入管理員密碼"
+                        required
+                        autocomplete="off"
+                        class="w-full px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 text-sm font-medium"
+                    >
+                </div>
+                <button type="submit" class="w-full btn-gradient text-white font-semibold py-3 px-6 rounded-lg shadow-lg text-base flex items-center justify-center">
+                    <span id="login-btn-text">登入控制台</span>
+                    <div id="login-spinner" class="spinner ml-3 hidden"></div>
+                </button>
+            </form>
+
+            <!-- Stats Preview -->
+            <div class="mt-8 pt-8 border-t-2 border-gray-200 dark:border-gray-700">
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="text-center">
+                        <div id="taskCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-12 h-8 mx-auto rounded"></div>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">總任務數</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="activeCount" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-12 h-8 mx-auto rounded"></div>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">活躍任務</div>
+                    </div>
+                    <div class="text-center">
+                        <div id="storageSize" class="text-2xl font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                            <div class="skeleton w-16 h-8 mx-auto rounded"></div>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 font-medium">儲存用量</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700 text-center space-y-2">
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    v2.0.0-secure-refactor |
+                    <a href="/" class="text-indigo-600 dark:text-indigo-400 hover:underline font-medium">返回首頁</a>
+                </p>
+                <p class="text-xs text-gray-400 dark:text-gray-500">© 2025 Multi-Layer Compression Tool</p>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- ==================== 管理員儀表板視圖 ==================== -->
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="glass-card rounded-2xl shadow-2xl p-6 mb-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="text-4xl">🎛️</div>
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">管理員儀表板</h1>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Multi-Layer Compression Tool - v2.0.0</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded-lg border-2 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        返回首頁
+                    </a>
+                    <a href="/admin" class="px-4 py-2 text-sm font-medium text-white btn-gradient rounded-lg shadow-lg">
+                        登出
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <!-- Total Tasks Card -->
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">總任務數</p>
+                        <p id="dashboardTaskCount" class="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-2">
+                            <div class="skeleton w-16 h-10 rounded"></div>
+                        </p>
+                    </div>
+                    <div class="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Active Tasks Card -->
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">活躍任務</p>
+                        <p id="dashboardActiveCount" class="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">
+                            <div class="skeleton w-16 h-10 rounded"></div>
+                        </p>
+                    </div>
+                    <div class="p-3 bg-green-100 dark:bg-green-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage Usage Card -->
+            <div class="glass-card stat-card rounded-xl shadow-xl p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-400">儲存用量</p>
+                        <p id="dashboardStorageSize" class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">
+                            <div class="skeleton w-20 h-10 rounded"></div>
+                        </p>
+                    </div>
+                    <div class="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full">
+                        <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Storage Doughnut Chart -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                    </svg>
+                    儲存空間分佈
+                </h3>
+                <div class="relative h-64">
+                    <canvas id="storageChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Task Activity Line Chart -->
+            <div class="glass-card rounded-xl shadow-xl p-6">
+                <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    任務活動趨勢
+                </h3>
+                <div class="relative h-64">
+                    <canvas id="activityChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="glass-card rounded-xl shadow-xl p-6">
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                <svg class="w-6 h-6 mr-2 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                系統資訊
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">系統狀態</p>
+                    <p id="systemStatus" class="text-lg font-bold text-green-600 dark:text-green-400 mt-1">運行中</p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">MongoDB 狀態</p>
+                    <p id="mongoStatus" class="text-lg font-bold text-gray-900 dark:text-white mt-1">
+                        <div class="skeleton w-24 h-6 rounded"></div>
+                    </p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">版本號</p>
+                    <p class="text-lg font-bold text-gray-900 dark:text-white mt-1">v2.0.0-secure-refactor</p>
+                </div>
+                <div class="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <p class="text-gray-600 dark:text-gray-400 font-medium">最大併發任務</p>
+                    <p id="maxConcurrent" class="text-lg font-bold text-gray-900 dark:text-white mt-1">3</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <script>
+        // ========================================
+        // Toast Notification System
+        // ========================================
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+
+            const icon = type === 'success'
+                ? '<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+                : '<svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+
+            toast.innerHTML = `
+                <div class="flex items-center">
+                    ${icon}
+                    <span class="font-medium">${message}</span>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            setTimeout(() => toast.classList.add('show'), 100);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Show login error toast if exists
+        {% if error == 'unauthorized' or request.args.get('error') == 'unauthorized' %}
+        setTimeout(() => showToast('密碼錯誤，請重試', 'error'), 500);
+        {% endif %}
+
+        // Show success toast on dashboard load
+        {% if authenticated %}
+        setTimeout(() => showToast('登入成功！歡迎回來', 'success'), 500);
+        {% endif %}
+
+        // ========================================
+        // Dark Mode Toggle
+        // ========================================
+        const themeToggleBtn = document.getElementById('theme-toggle');
+        const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
+        const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
+
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            themeToggleLightIcon.classList.remove('hidden');
+        } else {
+            themeToggleDarkIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function() {
+            themeToggleDarkIcon.classList.toggle('hidden');
+            themeToggleLightIcon.classList.toggle('hidden');
+
+            if (localStorage.getItem('color-theme')) {
+                if (localStorage.getItem('color-theme') === 'light') {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                }
+            } else {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                }
+            }
+
+            // Update charts on theme change
+            {% if authenticated %}
+            updateChartTheme();
+            {% endif %}
+        });
+
+        // ========================================
+        // CountUp Animation
+        // ========================================
+        function animateValue(element, start, end, duration) {
+            if (!element) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = Math.floor(progress * (end - start) + start);
+                element.textContent = value;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        function animateValueWithSuffix(element, start, end, duration, suffix = '') {
+            if (!element) return;
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const value = (progress * (end - start) + start).toFixed(1);
+                element.textContent = value + suffix;
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // ========================================
+        // Chart.js Setup
+        // ========================================
+        {% if authenticated %}
+        let storageChart, activityChart;
+
+        function getChartColors() {
+            const isDark = document.documentElement.classList.contains('dark');
+            return {
+                text: isDark ? '#e5e7eb' : '#374151',
+                grid: isDark ? '#374151' : '#e5e7eb',
+                primary: isDark ? '#818cf8' : '#667eea',
+                success: isDark ? '#34d399' : '#10b981',
+                warning: isDark ? '#fbbf24' : '#f59e0b',
+                purple: isDark ? '#a78bfa' : '#8b5cf6'
+            };
+        }
+
+        function createStorageChart(usedMB, totalMB = 1000) {
+            const ctx = document.getElementById('storageChart');
+            const colors = getChartColors();
+            const freeMB = totalMB - usedMB;
+            const usagePercent = ((usedMB / totalMB) * 100).toFixed(1);
+
+            // 根據使用率選擇顏色（綠色 < 60%，黃色 60-80%，紅色 > 80%）
+            let usedColor;
+            if (usagePercent < 60) {
+                usedColor = colors.success;  // 綠色
+            } else if (usagePercent < 80) {
+                usedColor = colors.warning;  // 黃色
+            } else {
+                usedColor = '#ef4444';  // 紅色
+            }
+
+            storageChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['已使用', '可用空間'],
+                    datasets: [{
+                        data: [usedMB, freeMB],
+                        backgroundColor: [usedColor, colors.grid],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: colors.text,
+                                padding: 20,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const percent = ((context.parsed / totalMB) * 100).toFixed(1);
+                                    return context.label + ': ' + context.parsed + ' MB (' + percent + '%)';
+                                }
+                            }
+                        }
+                    },
+                    // 中央顯示使用率百分比
+                    cutout: '70%'
+                }
+            });
+
+            // 在圖表中央顯示使用率
+            const centerTextPlugin = {
+                id: 'centerText',
+                afterDraw: function(chart) {
+                    const ctx = chart.ctx;
+                    const centerX = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
+                    const centerY = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top) / 2;
+
+                    ctx.save();
+                    ctx.font = 'bold 24px Inter';
+                    ctx.fillStyle = usedColor;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(usagePercent + '%', centerX, centerY - 10);
+
+                    ctx.font = '12px Inter';
+                    ctx.fillStyle = colors.text;
+                    ctx.fillText('已使用', centerX, centerY + 15);
+                    ctx.restore();
+                }
+            };
+
+            Chart.register(centerTextPlugin);
+        }
+
+        async function createActivityChart() {
+            const ctx = document.getElementById('activityChart');
+            const colors = getChartColors();
+
+            // Fetch real historical data from API
+            let labels = ['6天前', '5天前', '4天前', '3天前', '2天前', '昨天', '今天'];
+            let taskData = [0, 0, 0, 0, 0, 0, 0]; // Default fallback
+
+            try {
+                const response = await fetch('/api/task-stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    labels = data.labels || labels;
+                    taskData = data.data || taskData;
+                    console.log('✅ Loaded real task data:', taskData);
+                } else {
+                    console.warn('⚠️ Failed to load task stats, using fallback data');
+                }
+            } catch (err) {
+                console.error('❌ Error fetching task stats:', err);
+            }
+
+            activityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '任務數量',
+                        data: taskData,
+                        borderColor: colors.success,
+                        backgroundColor: colors.success + '20',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointBackgroundColor: colors.success,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return '任務數量: ' + context.parsed.y;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: colors.text,
+                                stepSize: 1,
+                                precision: 0
+                            },
+                            grid: {
+                                color: colors.grid
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: colors.text
+                            },
+                            grid: {
+                                color: colors.grid
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateChartTheme() {
+            const colors = getChartColors();
+
+            // Update storage chart
+            if (storageChart) {
+                storageChart.data.datasets[0].backgroundColor[1] = colors.grid;
+                storageChart.options.plugins.legend.labels.color = colors.text;
+                storageChart.update();
+            }
+
+            // Update activity chart
+            if (activityChart) {
+                activityChart.options.scales.y.ticks.color = colors.text;
+                activityChart.options.scales.y.grid.color = colors.grid;
+                activityChart.options.scales.x.ticks.color = colors.text;
+                activityChart.options.scales.x.grid.color = colors.grid;
+                activityChart.update();
+            }
+        }
+        {% endif %}
+
+        // ========================================
+        // Load Stats with Animation
+        // ========================================
+        async function loadStats() {
+            try {
+                const response = await fetch('/health');
+                if (response.ok) {
+                    const data = await response.json();
+                    const activeCount = parseInt(data.active_tasks) || 0;
+                    const mongoStatus = data.mongodb || 'unknown';
+
+                    // Update login page stats
+                    const activeCountEl = document.getElementById('activeCount');
+                    if (activeCountEl) {
+                        activeCountEl.innerHTML = '';
+                        activeCountEl.textContent = '0';
+                        animateValue(activeCountEl, 0, activeCount, 1000);
+                    }
+
+                    // Update dashboard stats
+                    const dashboardActiveEl = document.getElementById('dashboardActiveCount');
+                    if (dashboardActiveEl) {
+                        dashboardActiveEl.innerHTML = '';
+                        dashboardActiveEl.textContent = '0';
+                        animateValue(dashboardActiveEl, 0, activeCount, 1000);
+                    }
+
+                    const mongoStatusEl = document.getElementById('mongoStatus');
+                    if (mongoStatusEl) {
+                        mongoStatusEl.innerHTML = mongoStatus === 'healthy' ? '✅ 連線正常' : '❌ 連線異常';
+                    }
+                }
+            } catch (err) {
+                console.log('Health stats unavailable');
+            }
+
+            try {
+                const response = await fetch('/storage-stats');
+                if (response.ok) {
+                    const data = await response.json();
+                    const totalFiles = parseInt(data.total_files) || 0;
+                    const sizeMB = parseFloat(data.total_size_mb) || 0;
+                    const totalMB = parseFloat(data.total_space_mb) || 512;  // 真實總容量
+
+                    // Update login page stats
+                    const taskCountEl = document.getElementById('taskCount');
+                    if (taskCountEl) {
+                        taskCountEl.innerHTML = '';
+                        taskCountEl.textContent = '0';
+                        animateValue(taskCountEl, 0, totalFiles, 1000);
+                    }
+
+                    const storageSizeEl = document.getElementById('storageSize');
+                    if (storageSizeEl) {
+                        storageSizeEl.innerHTML = '';
+                        storageSizeEl.textContent = '0.0MB';
+                        animateValueWithSuffix(storageSizeEl, 0, sizeMB, 1000, 'MB');
+                    }
+
+                    // Update dashboard stats
+                    const dashboardTaskEl = document.getElementById('dashboardTaskCount');
+                    if (dashboardTaskEl) {
+                        dashboardTaskEl.innerHTML = '';
+                        dashboardTaskEl.textContent = '0';
+                        animateValue(dashboardTaskEl, 0, totalFiles, 1000);
+                    }
+
+                    const dashboardStorageEl = document.getElementById('dashboardStorageSize');
+                    if (dashboardStorageEl) {
+                        dashboardStorageEl.innerHTML = '';
+                        dashboardStorageEl.textContent = '0.0MB';
+                        animateValueWithSuffix(dashboardStorageEl, 0, sizeMB, 1000, 'MB');
+                    }
+
+                    // Create/Update storage chart with REAL total capacity
+                    {% if authenticated %}
+                    if (!storageChart) {
+                        createStorageChart(sizeMB, totalMB);  // ✅ 使用真實總容量
+                    } else {
+                        // Update existing chart with new data
+                        storageChart.data.datasets[0].data = [sizeMB, totalMB - sizeMB];
+                        storageChart.update();
+                    }
+
+                    // 儲存空間警告檢查
+                    const usagePercent = (sizeMB / totalMB) * 100;
+                    if (usagePercent >= 95) {
+                        showToast('⚠️ 儲存空間已滿 ' + usagePercent.toFixed(1) + '%！請清理舊檔案', 'error');
+                    } else if (usagePercent >= 80) {
+                        showToast('⚠️ 儲存空間使用率達 ' + usagePercent.toFixed(1) + '%', 'error');
+                    }
+                    {% endif %}
+                }
+            } catch (err) {
+                console.log('Storage stats unavailable');
+            }
+        }
+
+        // Initialize
+        loadStats();
+
+        {% if authenticated %}
+        // Create activity chart
+        createActivityChart();
+
+        // Refresh stats every 30 seconds
+        setInterval(loadStats, 30000);
+        {% endif %}
+    </script>
+</body>
+</html>
